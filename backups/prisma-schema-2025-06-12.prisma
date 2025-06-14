@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String     @id @default(cuid())
+  email       String     @unique
+  password    String
+  role        UserRole   // Hanya PUSAT dan SYUBIYAH
+  name        String
+  syubiyah_id String?    // NULL untuk PUSAT, berisi ID syubiyah untuk SYUBIYAH
+  isVerified  Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  // Relations
+  syubiyah    Syubiyah?  @relation(fields: [syubiyah_id], references: [id])
+  posts       Post[]
+  comments    Comment[]
+  blogs       Blog[]
+  events      Event[]
+  donations   Donation[]
+
+  @@map("users")
+}
+
+model Syubiyah {
+  id          String   @id @default(cuid())
+  name        String
+  provinsi    String   @default("") // Nama provinsi
+  kabupaten   String   @default("") // Nama kabupaten/kota
+  provinsiId  String?  // ID provinsi dari API wilayah
+  kabupatenId String?  // ID kabupaten dari API wilayah
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  alumni      Alumni[]
+  users       User[]   // Users dengan role SYUBIYAH yang mengelola syubiyah ini
+  eventParticipants EventParticipant[]
+
+  @@map("syubiyah")
+}
+
+model Mustahiq {
+  id              String   @id @default(cuid())
+  name            String
+  profilePhoto    String?  // URL foto profil
+  email           String?  @unique
+  phone           String?
+  
+  // Alamat lengkap dengan API wilayah
+  provinsi        String   @default("")
+  kabupaten       String   @default("")
+  kecamatan       String   @default("")
+  desa            String   @default("")
+  provinsiId      String?  // ID provinsi dari API wilayah
+  kabupatenId     String?  // ID kabupaten dari API wilayah
+  kecamatanId     String?  // ID kecamatan dari API wilayah
+  desaId          String?  // ID desa dari API wilayah
+  
+  // Detail alamat
+  namaJalan       String?  // Nama jalan/penanda/no rumah
+  rt              String?  // RT
+  rw              String?  // RW
+  
+  bidangKeahlian  String?  // Bidang keahlian (opsional)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  alumni          Alumni[]
+
+  @@map("mustahiq")
+}
+
+model Alumni {
+  id                String         @id @default(cuid())
+  profilePhoto      String?        // URL foto profil
+  fullName          String
+  tahunMasuk        Int?           // Tahun masuk
+  tahunKeluar       Int?           // Tahun keluar
+  asalDaerah        String?        // Asal daerah
+  syubiyahId        String?        // Syubiyah
+  mustahiqId        String?        // Mustahiq
+  tempatLahir       String?        // Tempat lahir
+  tanggalLahir      DateTime?      // Tanggal lahir
+  statusPernikahan  MaritalStatus? // Status pernikahan
+  jumlahAnak        Int?           // Jumlah anak
+  pendidikanTerakhir String?       // Pendidikan terakhir
+  pekerjaan         String[]       // Pekerjaan/aktivitas (array)
+  phone             String?        // No HP
+  email             String         @unique
+  penghasilanBulan  IncomeRange?   // Penghasilan per bulan
+  
+  // Alamat lengkap dengan API wilayah
+  provinsi          String         @default("")
+  kabupaten         String         @default("")
+  kecamatan         String         @default("")
+  desa              String         @default("")
+  provinsiId        String?        // ID provinsi dari API wilayah
+  kabupatenId       String?        // ID kabupaten dari API wilayah
+  kecamatanId       String?        // ID kecamatan dari API wilayah
+  desaId            String?        // ID desa dari API wilayah
+  
+  // Detail alamat
+  namaJalan         String?        // Nama jalan/penanda/no rumah
+  rt                String?        // RT
+  rw                String?        // RW
+  
+  // Sistem autentikasi alumni terpisah
+  password          String         // Password untuk login alumni (wajib)
+  isVerified        Boolean        @default(false) // Status verifikasi alumni
+  lastLogin         DateTime?      // Waktu login terakhir
+  loginAttempts     Int            @default(0) // Jumlah percobaan login gagal
+  lockedUntil       DateTime?      // Waktu hingga akun terkunci
+  emailVerifiedAt   DateTime?      // Waktu verifikasi email
+  passwordResetToken String?       // Token reset password
+  passwordResetExpires DateTime?   // Waktu kadaluarsa token reset
+  
+  status        AlumniStatus @default(PENDING)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  
+  // Relations
+  syubiyah      Syubiyah?    @relation(fields: [syubiyahId], references: [id])
+  mustahiq      Mustahiq?    @relation(fields: [mustahiqId], references: [id])
+  eventParticipants EventParticipant[]
+
+  @@map("alumni")
+}
+
+model Post {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  content     String
+  excerpt     String?
+  imageUrl    String?
+  status      ContentStatus @default(PENDING)
+  authorId    String
+  categoryId  String?
+  publishedAt DateTime?
+  viewCount   Int           @default(0)
+  visibility  PostVisibility @default(ALL_SYUBIYAH) // Visibilitas post
+  targetSyubiyahIds String[]   @default([]) // Array ID syubiyah untuk visibilitas tertentu
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  author      User          @relation(fields: [authorId], references: [id])
+  category    Category?     @relation(fields: [categoryId], references: [id])
+  comments    Comment[]
+  tags        PostTag[]
+
+  @@map("posts")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  color       String?  // Hex color untuk kategori
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  posts       Post[]
+
+  @@map("categories")
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  content   String
+  authorId  String
+  postId    String
+  parentId  String?       // Untuk reply/nested comments
+  status    ContentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  
+  // Relations
+  author    User          @relation(fields: [authorId], references: [id])
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent    Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[]     @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Relations
+  posts     PostTag[]
+
+  @@map("tags")
+}
+
+model PostTag {
+  id     String @id @default(cuid())
+  postId String
+  tagId  String
+  
+  // Relations
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, tagId])
+  @@map("post_tags")
+}
+
+model Blog {
+  id          String        @id @default(cuid())
+  title       String
+  content     String
+  excerpt     String?
+  imageUrl    String?
+  status      ContentStatus @default(PENDING)
+  authorId    String
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  author      User          @relation(fields: [authorId], references: [id])
+
+  @@map("blogs")
+}
+
+model EventCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String   @default("blue")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  events      Event[]
+
+  @@map("event_categories")
+}
+
+model Event {
+  id              String           @id @default(cuid())
+  title           String
+  description     String
+  excerpt         String?          // Ringkasan singkat
+  imageUrl        String?
+  location        String?
+  locationDetail  String?          // Detail alamat lengkap
+  startDate       DateTime
+  endDate         DateTime?
+  registrationStart DateTime?      // Mulai pendaftaran
+  registrationEnd   DateTime?      // Akhir pendaftaran
+  maxParticipants   Int?           // Maksimal peserta
+  currentParticipants Int @default(0) // Jumlah peserta saat ini
+  eventType       EventType        @default(SINGLE) // Jenis event: sekali atau periode
+  recurrencePattern String?        // Pola pengulangan untuk event periode (JSON)
+  status          ContentStatus    @default(PENDING)
+  visibility      PostVisibility   @default(ALL_SYUBIYAH)
+  targetSyubiyahIds String[]       // Array ID syubiyah untuk visibility SPECIFIC_SYUBIYAH
+  categoryId      String?
+  organizerId     String
+  registrationFee Decimal?         // Biaya pendaftaran
+  isOnline        Boolean          @default(false)
+  onlineLink      String?          // Link untuk event online
+  requirements    String[]         // Persyaratan peserta
+  benefits        String[]         // Manfaat mengikuti event
+  contactPerson   String?          // Narahubung
+  contactPhone    String?          // No HP narahubung
+  contactEmail    String?          // Email narahubung
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // Relations
+  category        EventCategory?   @relation(fields: [categoryId], references: [id])
+  organizer       User             @relation(fields: [organizerId], references: [id])
+  participants    EventParticipant[]
+  sessions        EventSession[]   // Untuk event dengan multiple session
+
+  @@map("events")
+}
+
+model EventSession {
+  id          String   @id @default(cuid())
+  eventId     String
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  speaker     String?  // Pembicara/narasumber
+  location    String?  // Lokasi khusus untuk session ini
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_sessions")
+}
+
+model EventParticipant {
+  id              String                @id @default(cuid())
+  eventId         String
+  participantName String
+  participantEmail String
+  participantPhone String?
+  syubiyahId      String?               // Syubiyah peserta
+  alumniId        String?               // Jika peserta adalah alumni
+  registrationDate DateTime             @default(now())
+  status          EventParticipantStatus @default(REGISTERED)
+  paymentStatus   PaymentStatus         @default(PENDING)
+  paymentAmount   Decimal?
+  paymentDate     DateTime?
+  notes           String?               // Catatan khusus
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  
+  // Relations
+  event           Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  syubiyah        Syubiyah?             @relation(fields: [syubiyahId], references: [id])
+  alumni          Alumni?               @relation(fields: [alumniId], references: [id])
+
+  @@unique([eventId, participantEmail])
+  @@map("event_participants")
+}
+
+model DonationProgram {
+  id            String     @id @default(cuid())
+  title         String
+  description   String
+  targetAmount  Decimal?
+  currentAmount Decimal    @default(0)
+  imageUrl      String?
+  isActive      Boolean    @default(true)
+  startDate     DateTime
+  endDate       DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  donations     Donation[]
+
+  @@map("donation_programs")
+}
+
+model Donation {
+  id        String           @id @default(cuid())
+  amount    Decimal
+  type      DonationType
+  message   String?
+  donorId   String
+  programId String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  donor     User             @relation(fields: [donorId], references: [id], map: "donation_donor_fkey")
+  program   DonationProgram? @relation(fields: [programId], references: [id], map: "donation_program_fkey")
+
+  @@map("donations")
+}
+
+enum UserRole {
+  PUSAT
+  SYUBIYAH
+}
+
+enum AlumniStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ContentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DonationType {
+  VOLUNTARY
+  PROGRAM
+}
+
+enum MaritalStatus {
+  MENIKAH
+  LAJANG
+  DUDA
+  JANDA
+  BELUM_MENIKAH
+}
+
+enum IncomeRange {
+  RANGE_1_5
+  RANGE_5_10
+  RANGE_10_30
+  ABOVE_30
+}
+
+enum PostVisibility {
+  ALL_SYUBIYAH     // Ditampilkan di semua syubiyah
+  SPECIFIC_SYUBIYAH // Ditampilkan hanya di syubiyah tertentu
+}
+
+enum EventType {
+  SINGLE    // Event sekali
+  RECURRING // Event berulang/periode
+}
+
+enum EventParticipantStatus {
+  REGISTERED  // Terdaftar
+  CONFIRMED   // Konfirmasi kehadiran
+  ATTENDED    // Hadir
+  CANCELLED   // Dibatalkan
+  WAITLISTED  // Daftar tunggu
+}
+
+enum PaymentStatus {
+  PENDING     // Menunggu pembayaran
+  PAID        // Sudah dibayar
+  CANCELLED   // Dibatalkan
+  REFUNDED    // Dikembalikan
+  FREE        // Gratis (tidak perlu bayar)
+}
