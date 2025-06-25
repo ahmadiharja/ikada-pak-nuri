@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, Suspense } from "react";
 import {
   Pagination,
   PaginationContent,
@@ -48,7 +48,7 @@ function useQueryParam(key: string) {
   return params.get(key);
 }
 
-export default function AlumniBookPage() {
+function AlumniBookPageContent() {
   // State filter
   const [search, setSearch] = useState("");
   const [abjad, setAbjad] = useState("ALL");
@@ -824,5 +824,17 @@ export default function AlumniBookPage() {
         <MobileBottomSheet />
       )}
     </div>
+  );
+}
+
+export default function AlumniBookPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      </div>
+    }>
+      <AlumniBookPageContent />
+    </Suspense>
   );
 }
