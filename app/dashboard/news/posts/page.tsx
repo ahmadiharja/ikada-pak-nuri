@@ -144,6 +144,7 @@ export default function PostsPage() {
   const [newCategoryData, setNewCategoryData] = useState<NewCategoryData>(initialNewCategoryData);
   const [formData, setFormData] = useState<PostFormData>(initialFormData);
   const [tagInput, setTagInput] = useState('');
+  const [tempUrls, setTempUrls] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState({
@@ -277,6 +278,60 @@ export default function PostsPage() {
     fetchSyubiyahs();
   }, [currentPage, searchTerm, statusFilter, categoryFilter]);
 
+  // Cleanup temp files function
+  const cleanupTempFiles = async (urlsToCleanup: string[]) => {
+    if (urlsToCleanup.length === 0) return;
+    
+    try {
+      await fetch('/api/upload/cleanup-temp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tempUrls: urlsToCleanup }),
+      });
+    } catch (error) {
+      console.error('Error cleaning up temp files:', error);
+    }
+  };
+
+  // Extract temp URLs from content and imageUrl
+  const extractTempUrls = (content: string, imageUrl?: string) => {
+    const tempUrls: string[] = [];
+    
+    // Extract temp URLs from content
+    const tempUrlRegex = /\/temp\/blog\/[^\s"')]+/g;
+    const contentMatches = content.match(tempUrlRegex);
+    if (contentMatches) {
+      tempUrls.push(...contentMatches);
+    }
+    
+    // Check if imageUrl is a temp URL
+    if (imageUrl && imageUrl.startsWith('/temp/blog/')) {
+      tempUrls.push(imageUrl);
+    }
+    
+    return [...new Set(tempUrls)]; // Remove duplicates
+  };
+
+  // Handle modal close with cleanup
+  const handleModalClose = async () => {
+    // Extract temp URLs from current form data
+    const currentTempUrls = extractTempUrls(formData.content, formData.imageUrl);
+    
+    // If we're not editing (creating new post) or if we're editing but haven't saved yet,
+    // cleanup temp files
+    if (!editingId || currentTempUrls.length > 0) {
+      await cleanupTempFiles(currentTempUrls);
+    }
+    
+    setIsModalOpen(false);
+    setEditingId(null);
+    setFormData(initialFormData);
+    setTagInput('');
+    setTempUrls([]);
+  };
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,6 +359,7 @@ export default function PostsPage() {
         setEditingId(null);
         setFormData(initialFormData);
         setTagInput('');
+        setTempUrls([]);
         fetchPosts();
       } else {
         toast({
@@ -510,7 +566,13 @@ export default function PostsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Manajemen Post</h1>
           <p className="text-muted-foreground">Kelola artikel dan berita website</p>
         </div>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog open={isModalOpen} onOpenChange={(open) => {
+          if (!open) {
+            handleModalClose();
+          } else {
+            setIsModalOpen(true);
+          }
+        }}>
           <DialogTrigger asChild>
             <Button onClick={openAddModal}>
               <Plus className="mr-2 h-4 w-4" />

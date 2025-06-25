@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
-    const highlightedPost = await prisma.post.findFirst({
+    const highlightedPosts = await prisma.post.findMany({
       where: {
         highlighted: true,
         status: 'APPROVED',
@@ -34,11 +34,11 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(highlightedPost);
+    return NextResponse.json({ highlightedPosts });
   } catch (error) {
-    console.error('Error fetching highlighted post:', error);
+    console.error('Error fetching highlighted posts:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch highlighted post' },
+      { error: 'Failed to fetch highlighted posts' },
       { status: 500 }
     );
   }

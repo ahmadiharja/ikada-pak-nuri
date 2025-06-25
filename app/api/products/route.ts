@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { verifyAlumniToken } from '@/lib/alumni-auth';
 
 const prisma = new PrismaClient();
 
@@ -19,6 +18,7 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
     const incrementView = searchParams.get('view') === 'true';
+    const stats = searchParams.get('stats') === 'true';
 
     const skip = (page - 1) * limit;
 
@@ -72,15 +72,19 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           category: true,
-          alumni: {
-            select: {
-              id: true,
-              fullName: true,
-              profilePhoto: true,
-              phone: true,
-              syubiyah: {
+          store: {
+            include: {
+              alumni: {
                 select: {
-                  name: true
+                  id: true,
+                  fullName: true,
+                  profilePhoto: true,
+                  phone: true,
+                  syubiyah: {
+                    select: {
+                      name: true
+                    }
+                  }
                 }
               }
             }
@@ -115,12 +119,12 @@ export async function GET(request: NextRequest) {
 
     // Calculate average rating for each product
     const productsWithRating = products.map(product => {
-      const ratings = product.reviews.map(r => r.rating);
+      const ratings = product.reviews?.map(r => r.rating) || [];
       const avgRating = ratings.length > 0 
         ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
         : 0;
       
-      const result = {
+      const result: any = {
         ...product,
         avgRating: Math.round(avgRating * 10) / 10,
         reviewCount: ratings.length,
@@ -146,11 +150,15 @@ export async function GET(request: NextRequest) {
         },
         include: {
           category: true,
-          alumni: {
-            select: {
-              id: true,
-              fullName: true,
-              profilePhoto: true
+          store: {
+            include: {
+              alumni: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  profilePhoto: true
+                }
+              }
             }
           },
           reviews: {
@@ -168,7 +176,7 @@ export async function GET(request: NextRequest) {
 
       // Calculate rating for related products
       const relatedWithRating = relatedProducts.map(product => {
-        const ratings = product.reviews.map(r => r.rating);
+        const ratings = product.reviews?.map(r => r.rating) || [];
         const avgRating = ratings.length > 0 
           ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
           : 0;
@@ -181,7 +189,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      productsWithRating[0].relatedProducts = relatedWithRating;
+      (productsWithRating[0] as any).relatedProducts = relatedWithRating;
     }
 
     // Return different response format for single product vs list
@@ -194,6 +202,39 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.json({
         products: productsWithRating
+      });
+    }
+
+    // Jika request untuk stats, kembalikan statistik saja
+    if (stats) {
+      const [
+        totalProducts,
+        activeProducts,
+        totalViews,
+        totalAlumniWithProducts,
+        avgRatingData
+      ] = await Promise.all([
+        prisma.product.count(),
+        prisma.product.count({ where: { isActive: true, isApproved: true } }),
+        prisma.product.aggregate({
+          _sum: { viewCount: true }
+        }),
+        prisma.alumniStore.count({ where: { isActive: true } }),
+        prisma.productReview.aggregate({
+          where: { isApproved: true, isPublic: true },
+          _avg: { rating: true }
+        })
+      ]);
+
+      return NextResponse.json({
+        stats: {
+          totalProducts,
+          activeProducts,
+          featuredProducts: 0, // Field isFeatured tidak ada di schema
+          totalViews: totalViews._sum.viewCount || 0,
+          totalAlumniWithProducts,
+          averageRating: avgRatingData._avg.rating || 0
+        }
       });
     }
 
@@ -221,31 +262,12 @@ export async function GET(request: NextRequest) {
 // POST /api/products - Buat produk baru (hanya alumni verified)
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Verifikasi token alumni
+    const authResult = await verifyAlumniToken(request);
+    if (authResult.error || !authResult.alumni) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status });
     }
-
-    // Cek apakah user adalah alumni verified
-    const alumni = await prisma.alumni.findUnique({
-      where: { email: session.user.email },
-      select: {
-        id: true,
-        isVerified: true,
-        status: true
-      }
-    });
-
-    if (!alumni || !alumni.isVerified || alumni.status !== 'VERIFIED') {
-      return NextResponse.json(
-        { error: 'Hanya alumni yang terverifikasi yang dapat menambah produk' },
-        { status: 403 }
-      );
-    }
+    const { alumni } = authResult;
 
     const body = await request.json();
     const {
@@ -287,6 +309,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Cek apakah alumni memiliki store
+    const alumniStore = await prisma.alumniStore.findUnique({
+      where: { alumniId: alumni.id }
+    });
+
+    if (!alumniStore) {
+      return NextResponse.json(
+        { error: 'Anda harus membuat toko terlebih dahulu sebelum menambah produk' },
+        { status: 400 }
+      );
+    }
+
     // Generate slug
     const slug = name
       .toLowerCase()
@@ -302,42 +336,30 @@ export async function POST(request: NextRequest) {
         name,
         slug,
         description,
-        shortDescription,
         price: price ? parseFloat(price) : null,
-        priceMin: priceMin ? parseFloat(priceMin) : null,
-        priceMax: priceMax ? parseFloat(priceMax) : null,
-        priceText,
+        unit: null, // Bisa ditambahkan nanti
         categoryId,
-        alumniId: alumni.id,
-        images: images || [],
-        thumbnailImage,
-        videoUrl,
-        location,
-        shippingInfo,
+        storeId: alumniStore.id,
         shopeeUrl,
         tokopediaUrl,
         tiktokUrl,
-        bukalapakUrl,
-        lazadaUrl,
-        blibliUrl,
-        whatsappNumber,
-        instagramUrl,
-        facebookUrl,
-        websiteUrl,
-        businessName,
-        businessType,
-        tags: tags || [],
-        metaTitle,
-        metaDescription,
+        images: images || [],
+        thumbnailImage,
+        shippedFromCity: location,
+        isActive: true,
         isApproved: true // Auto-approved untuk alumni verified
       },
       include: {
         category: true,
-        alumni: {
-          select: {
-            id: true,
-            fullName: true,
-            profilePhoto: true
+        store: {
+          include: {
+            alumni: {
+              select: {
+                id: true,
+                fullName: true,
+                profilePhoto: true
+              }
+            }
           }
         }
       }

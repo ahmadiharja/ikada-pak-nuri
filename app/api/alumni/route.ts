@@ -16,34 +16,87 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt'
     const order = searchParams.get('order') || 'desc'
 
-    const alumni = await prisma.alumni.findMany({
-      include: {
-        syubiyah: {
-          select: {
-            id: true,
-            name: true
-          }
+    // Ambil semua filter
+    const search = searchParams.get('search') || ''
+    const abjad = searchParams.get('abjad') || ''
+    const syubiyahId = searchParams.get('syubiyahId') || ''
+    const mustahiqId = searchParams.get('mustahiqId') || ''
+    const provinsiId = searchParams.get('provinsiId') || ''
+    const kabupatenId = searchParams.get('kabupatenId') || ''
+    const kecamatanId = searchParams.get('kecamatanId') || ''
+    const desaId = searchParams.get('desaId') || ''
+    const tahunMasuk = searchParams.get('tahunMasuk') || ''
+    const tahunKeluar = searchParams.get('tahunKeluar') || ''
+    const isVerified = searchParams.get('isVerified')
+    const status = searchParams.get('status') || ''
+    const page = searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1
+
+    // Build where clause
+    const where: any = {}
+    if (search) {
+      where.fullName = { contains: search, mode: 'insensitive' }
+    }
+    if (abjad && abjad !== 'ALL') {
+      where.fullName = Object.assign(where.fullName || {}, { 
+        startsWith: abjad,
+        mode: 'insensitive'
+      })
+    }
+    if (syubiyahId && syubiyahId !== 'ALL') {
+      where.syubiyahId = syubiyahId
+    }
+    if (mustahiqId && mustahiqId !== 'ALL') {
+      where.mustahiqId = mustahiqId
+    }
+    if (provinsiId) {
+      where.provinsiId = provinsiId
+    }
+    if (kabupatenId) {
+      where.kabupatenId = kabupatenId
+    }
+    if (kecamatanId) {
+      where.kecamatanId = kecamatanId
+    }
+    if (desaId) {
+      where.desaId = desaId
+    }
+    if (tahunMasuk && tahunMasuk !== 'ALL') {
+      where.tahunMasuk = parseInt(tahunMasuk)
+    }
+    if (tahunKeluar && tahunKeluar !== 'ALL') {
+      where.tahunKeluar = parseInt(tahunKeluar)
+    }
+    if (isVerified !== null && isVerified !== '') {
+      where.isVerified = isVerified === 'true'
+    }
+    if (status) {
+      where.status = status
+    }
+
+    const skip = limit ? (page - 1) * limit : undefined
+
+    // Query alumni
+    const [alumni, total] = await Promise.all([
+      prisma.alumni.findMany({
+        where,
+        include: {
+          syubiyah: { select: { id: true, name: true } },
+          mustahiq: { select: { id: true, name: true } }
         },
-        mustahiq: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      },
-      orderBy: {
-        [sortBy]: order as 'asc' | 'desc'
-      },
-      take: limit
-    })
+        orderBy: { [sortBy]: order as 'asc' | 'desc' },
+        take: limit,
+        skip
+      }),
+      prisma.alumni.count({ where })
+    ])
 
     // Add full photo URL to each alumni
     const alumniWithPhotoUrls = alumni.map(alumniData => ({
       ...alumniData,
-      profilePhoto: alumniData.profilePhoto || null
+      profilePhoto: alumniData.profilePhoto ? `/foto_alumni/${alumniData.profilePhoto}` : null
     }))
 
-    return NextResponse.json({ alumni: alumniWithPhotoUrls })
+    return NextResponse.json({ alumni: alumniWithPhotoUrls, total })
   } catch (error) {
     console.error('Error fetching alumni:', error)
     return NextResponse.json(
@@ -86,6 +139,7 @@ export async function POST(request: NextRequest) {
     const namaJalan = formData.get('namaJalan') as string
     const rt = formData.get('rt') as string
     const rw = formData.get('rw') as string
+    const username = formData.get('username') as string
     const profilePhoto = formData.get('profilePhoto') as File | null
 
     // Validate required fields
@@ -106,6 +160,34 @@ export async function POST(request: NextRequest) {
         { error: 'Email sudah terdaftar' },
         { status: 400 }
       )
+    }
+
+    // Check if phone already exists
+    if (phone && phone.trim() !== '') {
+      const existingPhoneAlumni = await prisma.alumni.findFirst({
+        where: { phone: phone.trim() }
+      })
+
+      if (existingPhoneAlumni) {
+        return NextResponse.json(
+          { error: 'Nomor HP sudah digunakan oleh alumni lain' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Check if username already exists
+    if (username && username.trim() !== '') {
+      const existingUsernameAlumni = await prisma.alumni.findFirst({
+        where: { username: username.trim() }
+      })
+
+      if (existingUsernameAlumni) {
+        return NextResponse.json(
+          { error: 'Username sudah digunakan oleh alumni lain' },
+          { status: 400 }
+        )
+      }
     }
 
     // Hash password
@@ -149,12 +231,15 @@ export async function POST(request: NextRequest) {
     // Parse pekerjaan array
     const pekerjaanArray = pekerjaan ? pekerjaan.split(',').map(p => p.trim()).filter(p => p) : []
 
+    // Generate username from phone if not provided
+    const finalUsername = username && username.trim() !== '' ? username : (phone ? phone.replace(/[^0-9]/g, '').slice(-10) : null)
+
     // Validate enum values
     const validMaritalStatus = ['MENIKAH', 'LAJANG', 'DUDA', 'JANDA', 'BELUM_MENIKAH']
-    const validIncomeRange = ['RANGE_1_5', 'RANGE_5_10', 'RANGE_10_30', 'ABOVE_30']
+    const validIncomeRange = ['KURANG_1_JUTA', 'SATU_3_JUTA', 'TIGA_5_JUTA', 'LIMA_10_JUTA', 'LEBIH_10_JUTA']
     
-    const validatedStatusPernikahan = statusPernikahan && validMaritalStatus.includes(statusPernikahan) ? statusPernikahan : null
-    const validatedPenghasilanBulan = penghasilanBulan && validIncomeRange.includes(penghasilanBulan) ? penghasilanBulan : null
+    const validatedStatusPernikahan = statusPernikahan && validMaritalStatus.includes(statusPernikahan) ? statusPernikahan as any : undefined;
+    const validatedPenghasilanBulan = penghasilanBulan && validIncomeRange.includes(penghasilanBulan) ? penghasilanBulan as any : undefined;
 
     // Create alumni
     const newAlumni = await prisma.alumni.create({
@@ -163,30 +248,31 @@ export async function POST(request: NextRequest) {
         email,
         password: hashedPassword,
         profilePhoto: photoFilename,
-        tahunMasuk: tahunMasuk ? parseInt(tahunMasuk) : null,
-        tahunKeluar: tahunKeluar ? parseInt(tahunKeluar) : null,
-        asalDaerah: asalDaerah || null,
-        syubiyahId: syubiyahId || null,
-        mustahiqId: mustahiqId || null,
-        tempatLahir: tempatLahir || null,
-        tanggalLahir: tanggalLahir ? new Date(tanggalLahir) : null,
+        tahunMasuk: tahunMasuk ? parseInt(tahunMasuk) : undefined,
+        tahunKeluar: tahunKeluar ? parseInt(tahunKeluar) : undefined,
+        asalDaerah: asalDaerah || undefined,
+        syubiyahId: syubiyahId || undefined,
+        mustahiqId: mustahiqId || undefined,
+        tempatLahir: tempatLahir || undefined,
+        tanggalLahir: tanggalLahir ? new Date(tanggalLahir) : undefined,
         statusPernikahan: validatedStatusPernikahan,
-        jumlahAnak: jumlahAnak ? parseInt(jumlahAnak) : null,
-        pendidikanTerakhir: pendidikanTerakhir || null,
+        jumlahAnak: jumlahAnak ? parseInt(jumlahAnak) : undefined,
+        pendidikanTerakhir: pendidikanTerakhir || undefined,
         pekerjaan: pekerjaanArray,
-        phone: phone || null,
+        phone: phone || undefined,
         penghasilanBulan: validatedPenghasilanBulan,
         provinsi,
-        provinsiId: provinsiId || null,
+        provinsiId: provinsiId || undefined,
         kabupaten,
-        kabupatenId: kabupatenId || null,
-        kecamatan: kecamatan || null,
-        kecamatanId: kecamatanId || null,
-        desa: desa || null,
-        desaId: desaId || null,
-        namaJalan: namaJalan || null,
-        rt: rt || null,
-        rw: rw || null,
+        kabupatenId: kabupatenId || undefined,
+        kecamatan: kecamatan || undefined,
+        kecamatanId: kecamatanId || undefined,
+        desa: desa || undefined,
+        desaId: desaId || undefined,
+        namaJalan: namaJalan || undefined,
+        rt: rt || undefined,
+        rw: rw || undefined,
+        username: finalUsername || undefined,
         isVerified: false,
         status: 'PENDING'
       }
@@ -196,7 +282,7 @@ export async function POST(request: NextRequest) {
       message: 'Alumni berhasil ditambahkan',
       alumni: {
         ...newAlumni,
-        profilePhoto: newAlumni.profilePhoto || null
+        profilePhoto: newAlumni.profilePhoto ? `/foto_alumni/${newAlumni.profilePhoto}` : null
       }
     })
   } catch (error) {

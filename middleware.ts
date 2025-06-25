@@ -1,22 +1,35 @@
-import { withAuth } from 'next-auth/middleware';
+import { NextResponse } from 'next/server'
+import { getToken } from 'next-auth/jwt'
+import type { NextRequest } from 'next/server'
 
-export default withAuth(
-  function middleware(req) {
-    // Additional middleware logic can be added here
-  },
-  {
-    callbacks: {
-      authorized: ({ token, req }) => {
-        // Check if user is authenticated and has the right role
-        if (req.nextUrl.pathname.startsWith('/dashboard')) {
-          return token?.role === 'PUSAT' || token?.role === 'SYUBIYAH';
-        }
-        return !!token;
-      },
-    },
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+
+  // === Alumni Area ===
+  if (pathname.startsWith('/alumni')) {
+    const alumniToken = req.cookies.get('alumni_token')?.value
+    if (!alumniToken) {
+      return NextResponse.redirect(new URL('/alumni-login', req.url))
+    }
+    return NextResponse.next()
   }
-);
+
+  // === Admin Area ===
+  if (pathname.startsWith('/dashboard')) {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
+    if (!token || !['PUSAT', 'SYUBIYAH'].includes(token.role)) {
+      return NextResponse.redirect(new URL('/admin', req.url))
+    }
+    return NextResponse.next()
+  }
+
+  // === Default: allow ===
+  return NextResponse.next()
+}
 
 export const config = {
-  matcher: ['/dashboard/:path*']
-};
+  matcher: [
+    '/alumni/:path*',
+    '/dashboard/:path*',
+  ]
+}

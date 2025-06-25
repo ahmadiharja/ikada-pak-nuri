@@ -2,9 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { GraduationCap, Menu } from 'lucide-react'
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
+import { GraduationCap, Menu, Users, Building2, Star } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -24,14 +23,11 @@ export function Navbar({ className = '' }: NavbarProps) {
   }
 
   const navItems = [
-    { href: '/', label: 'Beranda' },
-    { href: '/ikada', label: 'Ikada' },
-    { href: '/alumni', label: 'Alumni' },
-    { href: '/umkm', label: 'UMKM Alumni' },
-    { href: '/news', label: 'Berita' },
-    { href: '/events', label: 'Event' },
-    { href: '/contact', label: 'Kontak' },
-  ]
+  { href: '/', label: 'Beranda' },
+  { href: '/ikada/reuni-2026', label: 'Reuni 2026', highlight: true },
+  { href: '/alumni/dashboard', label: 'Portal Alumni' },
+  { href: '/dashboard', label: 'Dashboard Admin' },
+]
 
   return (
     <nav className={`sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}>
@@ -39,9 +35,9 @@ export function Navbar({ className = '' }: NavbarProps) {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <div className="flex items-center space-x-2">
-            <GraduationCap className="h-8 w-8 text-green-600" />
+            <GraduationCap className="h-8 w-8 text-blue-600" />
             <Link href="/" className="text-xl font-bold text-foreground">
-              IKADA Sumbersari
+              Portal Alumni
             </Link>
           </div>
 
@@ -55,24 +51,20 @@ export function Navbar({ className = '' }: NavbarProps) {
                   isActive(item.href)
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
-                }`}
+                } ${item.highlight ? 'bg-yellow-400 text-black px-4 py-2 rounded-lg font-bold shadow hover:bg-yellow-300 transition' : ''}`}
               >
                 {item.label}
+                {item.highlight && <Star className="inline ml-2 h-4 w-4 text-yellow-700" />}
               </Link>
             ))}
           </div>
 
           {/* Right Side - Theme Toggle & Buttons */}
           <div className="flex items-center space-x-4">
-            <ThemeToggle />
             <div className="hidden md:flex items-center space-x-2">
-              <Link href="/alumni/register">
-                <Button variant="outline" size="sm">
-                  Daftar Alumni
-                </Button>
-              </Link>
               <Link href="/login">
                 <Button size="sm">
+                  <Users className="w-4 h-4 mr-2" />
                   Login
                 </Button>
               </Link>
@@ -87,6 +79,7 @@ export function Navbar({ className = '' }: NavbarProps) {
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+                <SheetTitle id="mobile-navbar-title">Menu</SheetTitle>
                 <div className="flex flex-col space-y-4 mt-6">
                   {navItems.map((item) => (
                     <Link
@@ -96,20 +89,17 @@ export function Navbar({ className = '' }: NavbarProps) {
                         isActive(item.href)
                           ? 'text-primary'
                           : 'hover:text-primary'
-                      }`}
+                      } ${item.highlight ? 'bg-yellow-400 text-black px-4 py-2 rounded-lg font-bold shadow hover:bg-yellow-300 transition' : ''}`}
                       onClick={() => setIsOpen(false)}
                     >
                       {item.label}
+                      {item.highlight && <Star className="inline ml-2 h-4 w-4 text-yellow-700" />}
                     </Link>
                   ))}
                   <div className="pt-4 border-t space-y-2">
-                    <Link href="/alumni/register" className="block" onClick={() => setIsOpen(false)}>
-                      <Button variant="outline" className="w-full">
-                        Daftar Alumni
-                      </Button>
-                    </Link>
                     <Link href="/login" className="block" onClick={() => setIsOpen(false)}>
                       <Button className="w-full">
+                        <Users className="w-4 h-4 mr-2" />
                         Login
                       </Button>
                     </Link>

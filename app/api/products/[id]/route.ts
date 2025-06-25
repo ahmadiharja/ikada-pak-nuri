@@ -8,10 +8,10 @@ const prisma = new PrismaClient();
 // GET /api/products/[id] - Ambil detail produk
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     const { searchParams } = new URL(request.url);
     const incrementView = searchParams.get('view') === 'true';
 
@@ -19,15 +19,19 @@ export async function GET(
       where: { id },
       include: {
         category: true,
-        alumni: {
-          select: {
-            id: true,
-            fullName: true,
-            profilePhoto: true,
-            phone: true,
-            syubiyah: {
+        store: {
+          include: {
+            alumni: {
               select: {
-                name: true
+                id: true,
+                fullName: true,
+                profilePhoto: true,
+                phone: true,
+                syubiyah: {
+                  select: {
+                    name: true
+                  }
+                }
               }
             }
           }
@@ -99,12 +103,15 @@ export async function GET(
       }
     });
 
-    return NextResponse.json({
+    const productData = {
       ...product,
+      images: Array.isArray(product.images) ? product.images : [product.images].filter(Boolean),
       avgRating: Math.round(avgRating * 10) / 10,
       reviewCount: ratings.length,
       relatedProducts
-    });
+    };
+
+    return NextResponse.json(productData);
 
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -120,7 +127,7 @@ export async function GET(
 // PUT /api/products/[id] - Update produk (hanya pemilik)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -132,13 +139,17 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
 
     // Cek apakah produk ada dan milik alumni yang login
     const existingProduct = await prisma.product.findUnique({
       where: { id },
       include: {
-        alumni: true
+        store: {
+          include: {
+            alumni: true
+          }
+        }
       }
     });
 
@@ -149,7 +160,7 @@ export async function PUT(
       );
     }
 
-    if (existingProduct.alumni.email !== session.user.email) {
+    if (existingProduct.store.alumni.email !== session.user.email) {
       return NextResponse.json(
         { error: 'Anda tidak memiliki akses untuk mengubah produk ini' },
         { status: 403 }
@@ -237,11 +248,9 @@ export async function PUT(
       },
       include: {
         category: true,
-        alumni: {
-          select: {
-            id: true,
-            fullName: true,
-            profilePhoto: true
+        store: {
+          include: {
+            alumni: true
           }
         }
       }
@@ -266,7 +275,7 @@ export async function PUT(
 // DELETE /api/products/[id] - Hapus produk (hanya pemilik)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -278,13 +287,17 @@ export async function DELETE(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
 
     // Cek apakah produk ada dan milik alumni yang login
     const existingProduct = await prisma.product.findUnique({
       where: { id },
       include: {
-        alumni: true
+        store: {
+          include: {
+            alumni: true
+          }
+        }
       }
     });
 
@@ -295,7 +308,7 @@ export async function DELETE(
       );
     }
 
-    if (existingProduct.alumni.email !== session.user.email) {
+    if (existingProduct.store.alumni.email !== session.user.email) {
       return NextResponse.json(
         { error: 'Anda tidak memiliki akses untuk menghapus produk ini' },
         { status: 403 }

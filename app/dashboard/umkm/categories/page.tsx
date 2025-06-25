@@ -457,14 +457,14 @@ export default function CategoriesPage() {
               <div>
                 <Label htmlFor="parentId">Kategori Parent (Opsional)</Label>
                 <Select 
-                  value={formData.parentId || ''} 
-                  onValueChange={(value) => setFormData({ ...formData, parentId: value || undefined })}
+                  value={formData.parentId || 'root'} 
+                  onValueChange={(value) => setFormData({ ...formData, parentId: value === 'root' ? undefined : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih kategori parent" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Tidak ada parent (Kategori utama)</SelectItem>
+                    <SelectItem value="root">Tidak ada parent (Kategori utama)</SelectItem>
                     {flatCategories
                       .filter(cat => {
                         // Exclude current category and its descendants when editing

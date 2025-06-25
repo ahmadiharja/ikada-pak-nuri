@@ -10,12 +10,13 @@ const prisma = new PrismaClient()
 // GET - Fetch single alumni by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const alumni = await prisma.alumni.findUnique({
       where: {
-        id: params.id
+        id: id
       },
       include: {
         syubiyah: {
@@ -43,7 +44,7 @@ export async function GET(
     // Return alumni data with existing photo URL
     const alumniWithPhotoUrl = {
       ...alumni,
-      profilePhoto: alumni.profilePhoto || null
+      profilePhoto: alumni.profilePhoto ? `/foto_alumni/${alumni.profilePhoto}` : null
     }
 
     return NextResponse.json(alumniWithPhotoUrl)
@@ -59,12 +60,13 @@ export async function GET(
 // PUT - Update alumni
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     // Check if alumni exists
     const existingAlumni = await prisma.alumni.findUnique({
-      where: { id: params.id }
+      where: { id: id }
     })
 
     if (!existingAlumni) {
@@ -104,6 +106,7 @@ export async function PUT(
     const namaJalan = formData.get('namaJalan') as string
     const rt = formData.get('rt') as string
     const rw = formData.get('rw') as string
+    const username = formData.get('username') as string
     const profilePhoto = formData.get('profilePhoto') as File | null
 
     // Validate required fields
@@ -123,6 +126,34 @@ export async function PUT(
       if (emailExists) {
         return NextResponse.json(
           { error: 'Email sudah terdaftar' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Check if phone already exists (excluding current alumni)
+    if (phone && phone.trim() !== '' && phone !== existingAlumni.phone) {
+      const phoneExists = await prisma.alumni.findFirst({
+        where: { phone: phone.trim() }
+      })
+
+      if (phoneExists) {
+        return NextResponse.json(
+          { error: 'Nomor HP sudah digunakan oleh alumni lain' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Check if username already exists (excluding current alumni)
+    if (username && username.trim() !== '' && username !== existingAlumni.username) {
+      const usernameExists = await prisma.alumni.findFirst({
+        where: { username: username.trim() }
+      })
+
+      if (usernameExists) {
+        return NextResponse.json(
+          { error: 'Username sudah digunakan oleh alumni lain' },
           { status: 400 }
         )
       }
@@ -203,9 +234,12 @@ export async function PUT(
     // Parse pekerjaan array
     const pekerjaanArray = pekerjaan ? pekerjaan.split(',').map(p => p.trim()).filter(p => p) : []
 
+    // Generate username from phone if not provided
+    const finalUsername = username && username.trim() !== '' ? username : (phone ? phone.replace(/[^0-9]/g, '').slice(-10) : null)
+
     // Validate enum values
     const validMaritalStatus = ['MENIKAH', 'LAJANG', 'DUDA', 'JANDA', 'BELUM_MENIKAH']
-    const validIncomeRange = ['RANGE_1_5', 'RANGE_5_10', 'RANGE_10_30', 'ABOVE_30']
+    const validIncomeRange = ['KURANG_1_JUTA', 'SATU_3_JUTA', 'TIGA_5_JUTA', 'LIMA_10_JUTA', 'LEBIH_10_JUTA']
     
     const validatedStatusPernikahan = statusPernikahan && validMaritalStatus.includes(statusPernikahan) ? statusPernikahan : null
     const validatedPenghasilanBulan = penghasilanBulan && validIncomeRange.includes(penghasilanBulan) ? penghasilanBulan : null
@@ -238,7 +272,8 @@ export async function PUT(
       desaId: desaId || null,
       namaJalan: namaJalan || null,
       rt: rt || null,
-      rw: rw || null
+      rw: rw || null,
+      username: finalUsername
     }
 
     // Hash password if provided
@@ -248,7 +283,7 @@ export async function PUT(
 
     // Update alumni
     const updatedAlumni = await prisma.alumni.update({
-      where: { id: params.id },
+      where: { id: id },
       data: updateData
     })
 
@@ -256,7 +291,7 @@ export async function PUT(
       message: 'Alumni berhasil diperbarui',
       alumni: {
         ...updatedAlumni,
-        profilePhoto: updatedAlumni.profilePhoto || null
+        profilePhoto: updatedAlumni.profilePhoto ? `/foto_alumni/${updatedAlumni.profilePhoto}` : null
       }
     })
   } catch (error) {
@@ -271,12 +306,13 @@ export async function PUT(
 // DELETE - Delete alumni
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     // Check if alumni exists
     const existingAlumni = await prisma.alumni.findUnique({
-      where: { id: params.id }
+      where: { id: id }
     })
 
     if (!existingAlumni) {
@@ -302,7 +338,7 @@ export async function DELETE(
 
     // Delete alumni from database
     await prisma.alumni.delete({
-      where: { id: params.id }
+      where: { id: id }
     })
 
     return NextResponse.json({

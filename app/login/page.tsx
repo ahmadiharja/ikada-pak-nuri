@@ -154,6 +154,9 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       </div>
+      <footer className="w-full text-center text-xs text-gray-400 py-4 border-t mt-8">
+        © {new Date().getFullYear()} IKADA Admin. All rights reserved.
+      </footer>
     </div>
   );
 }

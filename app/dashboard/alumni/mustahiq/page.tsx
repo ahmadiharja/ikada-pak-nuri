@@ -417,6 +417,12 @@ export default function MustahiqPage() {
                       kabupatenId={formData.kabupatenId}
                       kecamatanId={formData.kecamatanId}
                       desaId={formData.desaId}
+                      initialData={editingId ? {
+                        provinsiId: formData.provinsiId,
+                        kabupatenId: formData.kabupatenId,
+                        kecamatanId: formData.kecamatanId,
+                        desaId: formData.desaId
+                      } : undefined}
                       onProvinsiChange={(provinsiId, provinsiName) => {
                       setFormData(prev => ({
                         ...prev,

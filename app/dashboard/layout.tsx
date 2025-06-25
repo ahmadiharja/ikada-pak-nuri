@@ -11,8 +11,9 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { usePathname } from "next/navigation"
-import { useMemo } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { useMemo, useEffect } from "react"
+import { useSession } from "next-auth/react"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -108,13 +109,44 @@ function generateBreadcrumbs(pathname: string) {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { data: session, status } = useSession()
   const breadcrumbs = useMemo(() => generateBreadcrumbs(pathname), [pathname])
+
+  // Protect dashboard routes
+  useEffect(() => {
+    if (status === 'loading') return // Still loading, wait
+    
+    if (status === 'unauthenticated') {
+      router.push('/admin')
+      return
+    }
+    
+    if (session && !['PUSAT', 'SYUBIYAH'].includes(session.user?.role || '')) {
+      router.push('/admin')
+      return
+    }
+  }, [session, status, router])
+
+  // Show loading while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      </div>
+    )
+  }
+
+  // Don't render anything if not authenticated
+  if (status === 'unauthenticated' || (session && !['PUSAT', 'SYUBIYAH'].includes(session.user?.role || ''))) {
+    return null
+  }
   
   return (
     <SidebarProvider>
       <DashboardSidebar />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+        <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
@@ -142,6 +174,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="min-h-[100vh] flex-1">
             {children}
           </div>
+          <footer className="w-full text-center text-xs text-gray-400 py-4 border-t mt-8">
+            © {new Date().getFullYear()} IKADA Admin. All rights reserved.
+          </footer>
         </div>
       </SidebarInset>
     </SidebarProvider>

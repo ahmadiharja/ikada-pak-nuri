@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Search, Edit, Trash2, Users, MapPin, Phone, Mail, Camera, Upload, Eye, GraduationCap, Calendar, User } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Users, MapPin, Phone, Mail, Camera, Upload, Eye, GraduationCap, Calendar, User, CheckCircle, XCircle, Clock } from "lucide-react";
 import { RegionSelector } from "@/components/ui/region-selector";
 import Image from "next/image";
 
@@ -46,6 +46,8 @@ interface Alumni {
   rt?: string;
   rw?: string;
   username?: string;
+  isVerified?: boolean;
+  status?: 'PENDING' | 'VERIFIED' | 'REJECTED';
   createdAt: string;
   updatedAt: string;
   syubiyah?: {
@@ -98,7 +100,7 @@ const statusPernikahanEnum = [
 ];
 
 const penghasilanEnum = [
-  "KURANG_1_JUTA", "1_3_JUTA", "3_5_JUTA", "5_10_JUTA", "LEBIH_10_JUTA"
+  "KURANG_1_JUTA", "SATU_3_JUTA", "TIGA_5_JUTA", "LIMA_10_JUTA", "LEBIH_10_JUTA"
 ];
 
 const initialFormData: AlumniFormData = {
@@ -145,6 +147,7 @@ export default function AlumniPage() {
   const [uploading, setUploading] = useState(false);
   const [syubiyahs, setSyubiyahs] = useState<any[]>([]);
   const [mustahiqs, setMustahiqs] = useState<any[]>([]);
+  const [verifying, setVerifying] = useState<string | null>(null);
 
   // Fetch alumni
   const fetchAlumni = async () => {
@@ -179,7 +182,7 @@ export default function AlumniPage() {
       const response = await fetch('/api/syubiyah');
       if (response.ok) {
         const data = await response.json();
-        setSyubiyahs(data);
+        setSyubiyahs(data.syubiyah || []);
       }
     } catch (error) {
       console.error('Error fetching syubiyahs:', error);
@@ -210,6 +213,15 @@ export default function AlumniPage() {
     return phone.replace(/[^0-9]/g, '').slice(-10);
   };
 
+  // Auto-generate username when phone changes (only if username is empty)
+  const handlePhoneChangeWithUsername = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      phone: value,
+      username: prev.username || generateUsername(value)
+    }));
+  };
+
   // Generate random password
   const generatePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -225,7 +237,7 @@ export default function AlumniPage() {
     setFormData(prev => ({
       ...prev,
       phone: value,
-      username: generateUsername(value)
+      username: prev.username || generateUsername(value)
     }));
   };
 
@@ -276,12 +288,95 @@ export default function AlumniPage() {
     }));
   };
 
+  // Validate unique phone and username
+  const validateUniqueFields = async (phone: string, username: string, excludeId?: string) => {
+    try {
+      const response = await fetch('/api/alumni/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone,
+          username,
+          excludeId
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        return { isValid: false, error: errorData.error };
+      }
+      
+      return { isValid: true };
+    } catch (error) {
+      return { isValid: false, error: 'Gagal memvalidasi data' };
+    }
+  };
+
+  // Handle alumni verification
+  const handleVerifyAlumni = async (id: string, status: 'VERIFIED' | 'REJECTED') => {
+    setVerifying(id);
+    try {
+      const response = await fetch(`/api/alumni/${id}/verify`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Sukses",
+          description: `Alumni berhasil ${status === 'VERIFIED' ? 'diverifikasi' : 'ditolak'}`,
+        });
+        fetchAlumni();
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.error || "Gagal memverifikasi alumni",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error verifying alumni:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memverifikasi alumni",
+        variant: "destructive",
+      });
+    } finally {
+      setVerifying(null);
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
+      // Validate unique fields
+      if (formData.phone || formData.username) {
+        const validation = await validateUniqueFields(
+          formData.phone,
+          formData.username,
+          editingId || undefined
+        );
+        
+        if (!validation.isValid) {
+          toast({
+            title: "Error",
+            description: validation.error,
+            variant: "destructive",
+          });
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const submitData = new FormData();
       
       // Add all form fields
@@ -330,45 +425,68 @@ export default function AlumniPage() {
   };
 
   // Handle edit
-  const handleEdit = (alumniData: Alumni) => {
-    setEditingId(alumniData.id);
-    setFormData({
-      fullName: alumniData.fullName,
-      email: alumniData.email || "",
-      phone: alumniData.phone || "",
-      tahunMasuk: alumniData.tahunMasuk.toString(),
-      tahunKeluar: alumniData.tahunKeluar?.toString() || "",
-      asalDaerah: alumniData.asalDaerah || "",
-      syubiyahId: "", // Will need to get from API
-      mustahiqId: "", // Will need to get from API
-      tempatLahir: alumniData.tempatLahir || "",
-      tanggalLahir: alumniData.tanggalLahir || "",
-      statusPernikahan: alumniData.statusPernikahan || "",
-      jumlahAnak: alumniData.jumlahAnak?.toString() || "",
-      pendidikanTerakhir: alumniData.pendidikanTerakhir || "",
-      pendidikanCustom: "",
-      pekerjaan: alumniData.pekerjaan || "",
-      penghasilanBulan: alumniData.penghasilanBulan || "",
-      provinsi: alumniData.provinsi,
-      provinsiId: alumniData.provinsiId || "",
-      kabupaten: alumniData.kabupaten,
-      kabupatenId: alumniData.kabupatenId || "",
-      kecamatan: alumniData.kecamatan,
-      kecamatanId: alumniData.kecamatanId || "",
-      desa: alumniData.desa,
-      desaId: alumniData.desaId || "",
-      namaJalan: alumniData.namaJalan || "",
-      rt: alumniData.rt || "",
-      rw: alumniData.rw || "",
-      username: alumniData.username || "",
-      password: ""
-    });
-    
-    if (alumniData.profilePhoto) {
-      setPhotoPreview(alumniData.profilePhoto);
+  const handleEdit = async (alumniData: Alumni) => {
+    try {
+      // Fetch detailed alumni data including syubiyah and mustahiq IDs
+      const response = await fetch(`/api/alumni/${alumniData.id}`);
+      if (response.ok) {
+        const detailedAlumni = await response.json();
+        
+        setEditingId(alumniData.id);
+        setFormData({
+          fullName: detailedAlumni.fullName || "",
+          email: detailedAlumni.email || "",
+          phone: detailedAlumni.phone || "",
+          tahunMasuk: detailedAlumni.tahunMasuk?.toString() || "",
+          tahunKeluar: detailedAlumni.tahunKeluar?.toString() || "",
+          asalDaerah: detailedAlumni.asalDaerah || "",
+          syubiyahId: detailedAlumni.syubiyah?.id || "",
+          mustahiqId: detailedAlumni.mustahiq?.id || "",
+          tempatLahir: detailedAlumni.tempatLahir || "",
+          tanggalLahir: detailedAlumni.tanggalLahir ? new Date(detailedAlumni.tanggalLahir).toISOString().split('T')[0] : "",
+          statusPernikahan: detailedAlumni.statusPernikahan || "",
+          jumlahAnak: detailedAlumni.jumlahAnak?.toString() || "",
+          pendidikanTerakhir: detailedAlumni.pendidikanTerakhir || "",
+          pendidikanCustom: "",
+          pekerjaan: detailedAlumni.pekerjaan || "",
+          penghasilanBulan: detailedAlumni.penghasilanBulan || "",
+          provinsi: detailedAlumni.provinsi || "",
+          provinsiId: detailedAlumni.provinsiId || "",
+          kabupaten: detailedAlumni.kabupaten || "",
+          kabupatenId: detailedAlumni.kabupatenId || "",
+          kecamatan: detailedAlumni.kecamatan || "",
+          kecamatanId: detailedAlumni.kecamatanId || "",
+          desa: detailedAlumni.desa || "",
+          desaId: detailedAlumni.desaId || "",
+          namaJalan: detailedAlumni.namaJalan || "",
+          rt: detailedAlumni.rt || "",
+          rw: detailedAlumni.rw || "",
+          username: detailedAlumni.username || "",
+          password: ""
+        });
+        
+        if (detailedAlumni.profilePhoto) {
+          setPhotoPreview(detailedAlumni.profilePhoto);
+        } else {
+          setPhotoPreview(null);
+        }
+        
+        setIsDialogOpen(true);
+      } else {
+        toast({
+          title: "Error",
+          description: "Gagal memuat data alumni untuk edit",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching alumni details:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat data alumni untuk edit",
+        variant: "destructive",
+      });
     }
-    
-    setIsDialogOpen(true);
   };
 
   // Handle delete
@@ -431,9 +549,9 @@ export default function AlumniPage() {
   const formatPenghasilan = (penghasilan: string) => {
     const penghasilanMap: { [key: string]: string } = {
       'KURANG_1_JUTA': '< Rp 1 Juta',
-      '1_3_JUTA': 'Rp 1-3 Juta',
-      '3_5_JUTA': 'Rp 3-5 Juta',
-      '5_10_JUTA': 'Rp 5-10 Juta',
+      'SATU_3_JUTA': 'Rp 1-3 Juta',
+      'TIGA_5_JUTA': 'Rp 3-5 Juta',
+      'LIMA_10_JUTA': 'Rp 5-10 Juta',
       'LEBIH_10_JUTA': '> Rp 10 Juta'
     };
     return penghasilanMap[penghasilan] || penghasilan;
@@ -925,7 +1043,8 @@ export default function AlumniPage() {
                     <TableHead>Kontak</TableHead>
                     <TableHead>Tahun</TableHead>
                     <TableHead>Pendidikan</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Status Pernikahan</TableHead>
+                    <TableHead>Verifikasi</TableHead>
                     <TableHead>Alamat</TableHead>
                     <TableHead>Aksi</TableHead>
                   </TableRow>
@@ -1003,6 +1122,52 @@ export default function AlumniPage() {
                           {alumniItem.jumlahAnak && alumniItem.jumlahAnak > 0 && (
                             <div className="text-sm text-muted-foreground">
                               {alumniItem.jumlahAnak} anak
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            {alumniItem.status === 'VERIFIED' && (
+                              <Badge variant="default" className="bg-green-500">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Terverifikasi
+                              </Badge>
+                            )}
+                            {alumniItem.status === 'PENDING' && (
+                              <Badge variant="secondary">
+                                <Clock className="w-3 h-3 mr-1" />
+                                Menunggu
+                              </Badge>
+                            )}
+                            {alumniItem.status === 'REJECTED' && (
+                              <Badge variant="destructive">
+                                <XCircle className="w-3 h-3 mr-1" />
+                                Ditolak
+                              </Badge>
+                            )}
+                          </div>
+                          {alumniItem.status === 'PENDING' && (
+                            <div className="flex space-x-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleVerifyAlumni(alumniItem.id, 'VERIFIED')}
+                                disabled={verifying === alumniItem.id}
+                                className="text-green-600 border-green-600 hover:bg-green-50"
+                              >
+                                <CheckCircle className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleVerifyAlumni(alumniItem.id, 'REJECTED')}
+                                disabled={verifying === alumniItem.id}
+                                className="text-red-600 border-red-600 hover:bg-red-50"
+                              >
+                                <XCircle className="h-3 w-3" />
+                              </Button>
                             </div>
                           )}
                         </div>

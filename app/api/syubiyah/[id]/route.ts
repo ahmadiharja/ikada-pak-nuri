@@ -9,7 +9,9 @@ const syubiyahSchema = z.object({
   provinsi: z.string().min(1, 'Provinsi harus dipilih'),
   kabupaten: z.string().min(1, 'Kabupaten/Kota harus dipilih'),
   provinsiId: z.string().min(1, 'ID Provinsi harus ada'),
-  kabupatenId: z.string().min(1, 'ID Kabupaten harus ada')
+  kabupatenId: z.string().min(1, 'ID Kabupaten harus ada'),
+  penanggungJawab: z.string().optional(),
+  noHpPenanggungJawab: z.string().optional()
 })
 
 // GET - Ambil syubiyah berdasarkan ID
@@ -113,7 +115,9 @@ export async function PUT(
         provinsi: validatedData.provinsi,
         kabupaten: validatedData.kabupaten,
         provinsiId: validatedData.provinsiId,
-        kabupatenId: validatedData.kabupatenId
+        kabupatenId: validatedData.kabupatenId,
+        penanggungJawab: validatedData.penanggungJawab || null,
+        noHpPenanggungJawab: validatedData.noHpPenanggungJawab || null
       },
       include: {
         _count: {

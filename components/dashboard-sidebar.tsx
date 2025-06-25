@@ -1,6 +1,7 @@
 "use client"
 
-import type * as React from "react"
+import React from "react"
+import type * as ReactType from "react"
 import {
   LayoutDashboard,
   Users,
@@ -28,11 +29,13 @@ import {
   Mail,
   Shield,
   Database,
+  CheckCircle,
   UserCog,
   Tag,
   MessageCircle,
   ShoppingBag,
   Store,
+  LogOut,
 } from "lucide-react"
 
 import {
@@ -54,6 +57,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { useSession, signOut } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
 const menuItems = [
   {
@@ -137,11 +142,6 @@ const managementItems = [
         url: "/dashboard/events/list",
       },
       {
-        title: "Kategori Event",
-        icon: Tag,
-        url: "/dashboard/events/categories",
-      },
-      {
         title: "Peserta Event",
         icon: Users,
         url: "/dashboard/events/participants",
@@ -149,33 +149,28 @@ const managementItems = [
     ],
   },
   {
-    title: "Donasi & Sponsorship",
+    title: "Donasi",
     icon: DollarSign,
     items: [
-      {
-        title: "Riwayat Donasi",
-        icon: History,
-        url: "/dashboard/donations/history",
-      },
-      {
-        title: "Donatur",
-        icon: Users,
-        url: "/dashboard/donations/donors",
-      },
-      {
-        title: "Sponsor",
-        icon: Handshake,
-        url: "/dashboard/donations/sponsors",
-      },
       {
         title: "Program Donasi",
         icon: Gift,
         url: "/dashboard/donations/programs",
       },
       {
-        title: "Pengaturan Pembayaran",
-        icon: CreditCard,
-        url: "/dashboard/donations/payment-settings",
+        title: "Transaksi Donasi",
+        icon: History,
+        url: "/dashboard/donations/transactions",
+      },
+      {
+        title: "Persetujuan Transfer",
+        icon: CheckCircle,
+        url: "/dashboard/donations/approvals",
+      },
+      {
+        title: "Laporan Donasi",
+        icon: BarChart3,
+        url: "/dashboard/donations/reports",
       },
     ],
   },
@@ -269,6 +264,51 @@ const managementItems = [
 ]
 
 export function DashboardSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { data: session } = useSession()
+  const router = useRouter()
+// DEBUG: tampilkan isi session di console
+  React.useEffect(() => {
+    if (session) {
+      // eslint-disable-next-line no-console
+      console.log("Current NextAuth session in Sidebar ===>", session)
+    }
+  }, [session]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/admin'
+      })
+      router.push('/admin')
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
+
+  const getUserInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(word => word.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const getUserDisplayName = () => {
+    if (session?.user?.name) {
+      return session.user.name
+    }
+    return 'Admin IKADA'
+  }
+
+  const getUserEmail = () => {
+    if (session?.user?.email) {
+      return session.user.email
+    }
+    return 'admin@ikada.com'
+  }
+
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
@@ -307,6 +347,25 @@ export function DashboardSidebar({ ...props }: React.ComponentProps<typeof Sideb
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Menu Reuni 2026 khusus Superadmin */}
+        {session?.user?.role === "PUSAT" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Reuni</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <a href="/dashboard/reuni">
+                      <Calendar className="h-4 w-4" />
+                      <span>Reuni 2026</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Manajemen</SidebarGroupLabel>
@@ -364,11 +423,13 @@ export function DashboardSidebar({ ...props }: React.ComponentProps<typeof Sideb
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
                     <AvatarImage src="/placeholder-user.jpg" alt="Admin" />
-                    <AvatarFallback className="rounded-lg ikada-gradient text-white">AD</AvatarFallback>
+                    <AvatarFallback className="rounded-lg ikada-gradient text-white">
+                      {getUserInitials(getUserDisplayName())}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">Admin IKADA</span>
-                    <span className="truncate text-xs text-muted-foreground">admin@ikada.com</span>
+                    <span className="truncate font-semibold">{getUserDisplayName()}</span>
+                    <span className="truncate text-xs text-muted-foreground">{getUserEmail()}</span>
                   </div>
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
@@ -390,7 +451,13 @@ export function DashboardSidebar({ ...props }: React.ComponentProps<typeof Sideb
                   <Bell className="h-4 w-4 mr-2" />
                   Notifikasi
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-red-600">Keluar</DropdownMenuItem>
+                <DropdownMenuItem 
+                  className="text-red-600 cursor-pointer"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Keluar
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

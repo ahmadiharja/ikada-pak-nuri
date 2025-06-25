@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
     const search = searchParams.get('search') || '';
+    const slug = searchParams.get('slug') || '';
     const categoryId = searchParams.get('categoryId') || '';
     const status = searchParams.get('status') || '';
     const authorId = searchParams.get('authorId') || '';
@@ -21,7 +22,10 @@ export async function GET(request: NextRequest) {
     
     const where: any = {};
     
-    if (search) {
+    // If slug is provided, search by exact slug match
+    if (slug) {
+      where.slug = slug;
+    } else if (search) {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
         { content: { contains: search, mode: 'insensitive' } },
@@ -165,14 +169,80 @@ export async function POST(request: NextRequest) {
       finalSlug = `${slug}-${timestamp}`;
     }
     
+    // Helper function to extract temp URLs from content and imageUrl
+    const extractTempUrls = (content: string, imageUrl?: string) => {
+      const tempUrls: string[] = [];
+      
+      // Extract temp URLs from content
+      const tempUrlRegex = /\/temp\/blog\/[^\s"')]+/g;
+      const contentMatches = content.match(tempUrlRegex);
+      if (contentMatches) {
+        tempUrls.push(...contentMatches);
+      }
+      
+      // Check if imageUrl is a temp URL
+      if (imageUrl && imageUrl.startsWith('/temp/blog/')) {
+        tempUrls.push(imageUrl);
+      }
+      
+      return [...new Set(tempUrls)]; // Remove duplicates
+    };
+
+    // Helper function to replace temp URLs with public URLs
+    const replaceTempUrls = (text: string, urlMapping: Record<string, string>) => {
+      let updatedText = text;
+      Object.entries(urlMapping).forEach(([tempUrl, publicUrl]) => {
+        updatedText = updatedText.replace(new RegExp(tempUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), publicUrl);
+      });
+      return updatedText;
+    };
+
+    let finalContent = content;
+    let finalImageUrl = imageUrl;
+    
+    // If status is APPROVED, move temp files to public
+    if (status === 'APPROVED') {
+      const tempUrls = extractTempUrls(content, imageUrl);
+      
+      if (tempUrls.length > 0) {
+        try {
+          const moveResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/upload/move-to-public`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ tempUrls }),
+          });
+          
+          if (moveResponse.ok) {
+            const moveResult = await moveResponse.json();
+            const urlMapping: Record<string, string> = {};
+            
+            moveResult.movedFiles.forEach((file: any) => {
+              urlMapping[file.tempUrl] = file.publicUrl;
+            });
+            
+            // Replace temp URLs with public URLs
+            finalContent = replaceTempUrls(content, urlMapping);
+            if (imageUrl && urlMapping[imageUrl]) {
+              finalImageUrl = urlMapping[imageUrl];
+            }
+          }
+        } catch (error) {
+          console.error('Error moving temp files to public:', error);
+          // Continue with post creation even if file move fails
+        }
+      }
+    }
+
     // Create post with tags
     const post = await prisma.post.create({
       data: {
         title,
         slug: finalSlug,
-        content,
+        content: finalContent,
         excerpt,
-        imageUrl,
+        imageUrl: finalImageUrl,
         status,
         authorId: session.user.id,
         categoryId: categoryId && categoryId !== 'none' ? categoryId : null,

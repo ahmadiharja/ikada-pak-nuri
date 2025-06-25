@@ -72,11 +72,12 @@ export function RegionSelector({
   showKecamatan = false,
   showDesa = false
 }: RegionSelectorProps) {
-  // Use initialData if provided, otherwise use individual props
-  const provinsiId = initialData?.provinsiId || propProvinsiId
-  const kabupatenId = initialData?.kabupatenId || propKabupatenId
-  const kecamatanId = initialData?.kecamatanId || propKecamatanId
-  const desaId = initialData?.desaId || propDesaId
+  // Use internal state for region IDs
+  const [selectedProvinsiId, setSelectedProvinsiId] = useState(initialData?.provinsiId || propProvinsiId || '')
+  const [selectedKabupatenId, setSelectedKabupatenId] = useState(initialData?.kabupatenId || propKabupatenId || '')
+  const [selectedKecamatanId, setSelectedKecamatanId] = useState(initialData?.kecamatanId || propKecamatanId || '')
+  const [selectedDesaId, setSelectedDesaId] = useState(initialData?.desaId || propDesaId || '')
+  
   const [provinces, setProvinces] = useState<Province[]>([])
   const [regencies, setRegencies] = useState<Regency[]>([])
   const [districts, setDistricts] = useState<District[]>([])
@@ -85,6 +86,87 @@ export function RegionSelector({
   const [loadingRegencies, setLoadingRegencies] = useState(false)
   const [loadingDistricts, setLoadingDistricts] = useState(false)
   const [loadingVillages, setLoadingVillages] = useState(false)
+
+  // Sync state with props
+  useEffect(() => {
+    setSelectedProvinsiId(propProvinsiId || '');
+    setSelectedKabupatenId(propKabupatenId || '');
+    setSelectedKecamatanId(propKecamatanId || '');
+    setSelectedDesaId(propDesaId || '');
+  }, [propProvinsiId, propKabupatenId, propKecamatanId, propDesaId]);
+
+  // Handle initialData changes
+  useEffect(() => {
+    if (initialData) {
+      setSelectedProvinsiId(initialData.provinsiId || '')
+      setSelectedKabupatenId(initialData.kabupatenId || '')
+      setSelectedKecamatanId(initialData.kecamatanId || '')
+      setSelectedDesaId(initialData.desaId || '')
+    }
+  }, [initialData])
+
+  // Load regencies when initialData has provinsiId
+  useEffect(() => {
+    if (initialData?.provinsiId) {
+      const fetchInitialRegencies = async () => {
+        try {
+          setLoadingRegencies(true)
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${initialData.provinsiId}.json`)
+          if (response.ok) {
+            const data = await response.json()
+            setRegencies(data)
+          }
+        } catch (error) {
+          //
+        } finally {
+          setLoadingRegencies(false)
+        }
+      }
+      fetchInitialRegencies()
+    }
+  }, [initialData?.provinsiId])
+
+  // Load districts when initialData has kabupatenId
+  useEffect(() => {
+    if (initialData?.kabupatenId && showKecamatan) {
+      const fetchInitialDistricts = async () => {
+        try {
+          setLoadingDistricts(true)
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${initialData.kabupatenId}.json`)
+          if (response.ok) {
+            const data = await response.json()
+            setDistricts(data)
+          }
+        } catch (error) {
+          //
+        } finally {
+          setLoadingDistricts(false)
+        }
+      }
+      fetchInitialDistricts()
+    }
+  }, [initialData?.kabupatenId, showKecamatan])
+
+  // Load villages when initialData has kecamatanId
+  useEffect(() => {
+    if (initialData?.kecamatanId && showDesa) {
+      const fetchInitialVillages = async () => {
+        try {
+          setLoadingVillages(true)
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${initialData.kecamatanId}.json`)
+          if (response.ok) {
+            const data = await response.json()
+            setVillages(data)
+          }
+        } catch (error) {
+          //
+        } finally {
+          setLoadingVillages(false)
+        }
+      }
+      fetchInitialVillages()
+    }
+  }, [initialData?.kecamatanId, showDesa])
 
   // Fetch provinces on component mount
   useEffect(() => {
@@ -95,9 +177,11 @@ export function RegionSelector({
         if (response.ok) {
           const data = await response.json()
           setProvinces(data)
+        } else {
+          setProvinces([])
         }
       } catch (error) {
-        console.error('Error fetching provinces:', error)
+        setProvinces([])
       } finally {
         setLoadingProvinces(false)
       }
@@ -106,23 +190,24 @@ export function RegionSelector({
     fetchProvinces()
   }, [])
 
-  // Fetch regencies when province changes
+  // Fetch regencies when province changes (but not when initialData is being processed)
   useEffect(() => {
-    if (provinsiId) {
+    if (selectedProvinsiId && !initialData) {
       const fetchRegencies = async () => {
         try {
           setLoadingRegencies(true)
           setRegencies([]) // Clear previous regencies immediately
-          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${provinsiId}.json`)
+          setSelectedKabupatenId('') // Reset kabupaten selection
+          setSelectedKecamatanId('') // Reset kecamatan selection
+          setSelectedDesaId('') // Reset desa selection
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${selectedProvinsiId}.json`)
           if (response.ok) {
             const data = await response.json()
             setRegencies(data)
           } else {
-            console.error('Failed to fetch regencies:', response.status)
             setRegencies([])
           }
         } catch (error) {
-          console.error('Error fetching regencies:', error)
           setRegencies([])
         } finally {
           setLoadingRegencies(false)
@@ -130,31 +215,34 @@ export function RegionSelector({
       }
 
       fetchRegencies()
-    } else {
+    } else if (!selectedProvinsiId && !initialData) {
       setRegencies([])
       setDistricts([])
       setVillages([])
+      setSelectedKabupatenId('')
+      setSelectedKecamatanId('')
+      setSelectedDesaId('')
       setLoadingRegencies(false)
     }
-  }, [provinsiId])
+  }, [selectedProvinsiId, initialData])
 
-  // Fetch districts when regency changes
+  // Fetch districts when regency changes (but not when initialData is being processed)
   useEffect(() => {
-    if (kabupatenId && showKecamatan) {
+    if (selectedKabupatenId && showKecamatan && !initialData) {
       const fetchDistricts = async () => {
         try {
           setLoadingDistricts(true)
-          setDistricts([]) // Clear previous districts immediately
-          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${kabupatenId}.json`)
+          setDistricts([])
+          setSelectedKecamatanId('')
+          setSelectedDesaId('')
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${selectedKabupatenId}.json`)
           if (response.ok) {
             const data = await response.json()
             setDistricts(data)
           } else {
-            console.error('Failed to fetch districts:', response.status)
             setDistricts([])
           }
         } catch (error) {
-          console.error('Error fetching districts:', error)
           setDistricts([])
         } finally {
           setLoadingDistricts(false)
@@ -162,30 +250,31 @@ export function RegionSelector({
       }
 
       fetchDistricts()
-    } else {
+    } else if (!selectedKabupatenId && showKecamatan && !initialData) {
       setDistricts([])
       setVillages([])
+      setSelectedKecamatanId('')
+      setSelectedDesaId('')
       setLoadingDistricts(false)
     }
-  }, [kabupatenId, showKecamatan])
+  }, [selectedKabupatenId, showKecamatan, initialData])
 
-  // Fetch villages when district changes
+  // Fetch villages when district changes (but not when initialData is being processed)
   useEffect(() => {
-    if (kecamatanId && showDesa) {
+    if (selectedKecamatanId && showDesa && !initialData) {
       const fetchVillages = async () => {
         try {
           setLoadingVillages(true)
-          setVillages([]) // Clear previous villages immediately
-          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${kecamatanId}.json`)
+          setVillages([])
+          setSelectedDesaId('')
+          const response = await fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${selectedKecamatanId}.json`)
           if (response.ok) {
             const data = await response.json()
             setVillages(data)
           } else {
-            console.error('Failed to fetch villages:', response.status)
             setVillages([])
           }
         } catch (error) {
-          console.error('Error fetching villages:', error)
           setVillages([])
         } finally {
           setLoadingVillages(false)
@@ -193,284 +282,227 @@ export function RegionSelector({
       }
 
       fetchVillages()
-    } else {
+    } else if (!selectedKecamatanId && showDesa && !initialData) {
       setVillages([])
+      setSelectedDesaId('')
       setLoadingVillages(false)
     }
-  }, [kecamatanId, showDesa])
+  }, [selectedKecamatanId, showDesa, initialData])
 
   const handleProvinceChange = (value: string) => {
-    console.log('Province changed:', value)
-    const selectedProvince = provinces.find(p => p.id === value)
-    if (selectedProvince) {
-      console.log('Selected province:', selectedProvince)
-      // Reset all dependent selections
-      const regionData = {
-        provinsi: selectedProvince.name,
-        provinsiId: selectedProvince.id,
-        kabupaten: '',
+    const realValue = value === '_ALL_' ? '' : value;
+    const provinceName = provinces.find((p) => p.id === realValue)?.name || ''
+    setSelectedProvinsiId(realValue)
+    setSelectedKabupatenId('')
+    setSelectedKecamatanId('')
+    setSelectedDesaId('')
+    setRegencies([])
+    setDistricts([])
+    setVillages([])
+    
+    // Callbacks
+    if (onProvinsiChange) onProvinsiChange(realValue, provinceName)
+    if (onRegionChange) {
+      onRegionChange({
+        provinsiId: realValue,
+        provinsi: provinceName,
         kabupatenId: '',
-        kecamatan: '',
+        kabupaten: '',
         kecamatanId: '',
-        desa: '',
-        desaId: ''
-      }
-      
-      // Use onRegionChange if available, otherwise use individual callbacks
-      if (onRegionChange) {
-        onRegionChange(regionData)
-      } else {
-        // Only call individual callbacks if onRegionChange is not available
-        if (onProvinsiChange) onProvinsiChange(selectedProvince.id, selectedProvince.name)
-        if (onKabupatenChange) onKabupatenChange('', '')
-        if (onKecamatanChange) onKecamatanChange('', '')
-        if (onDesaChange) onDesaChange('', '')
-      }
+        kecamatan: '',
+        desaId: '',
+        desa: ''
+      })
     }
   }
 
   const handleRegencyChange = (value: string) => {
-    console.log('Regency changed:', value)
-    const selectedRegency = regencies.find(r => r.id === value)
-    if (selectedRegency) {
-      console.log('Selected regency:', selectedRegency)
-      // Reset dependent selections
-      const selectedProvince = provinces.find(p => p.id === selectedRegency.province_id)
-      const provinceName = selectedProvince ? selectedProvince.name : ''
-      
-      const regionData = {
-        provinsi: provinceName,
-        provinsiId: selectedRegency.province_id,
-        kabupaten: selectedRegency.name,
-        kabupatenId: selectedRegency.id,
-        kecamatan: '',
+    const realValue = value === '_ALL_' ? '' : value;
+    const regencyName = regencies.find((r) => r.id === realValue)?.name || ''
+    setSelectedKabupatenId(realValue)
+    setSelectedKecamatanId('')
+    setSelectedDesaId('')
+    setDistricts([])
+    setVillages([])
+
+    if (onKabupatenChange) onKabupatenChange(realValue, regencyName)
+    if (onRegionChange) {
+      onRegionChange({
+        provinsiId: selectedProvinsiId,
+        provinsi: provinces.find((p) => p.id === selectedProvinsiId)?.name || '',
+        kabupatenId: realValue,
+        kabupaten: regencyName,
         kecamatanId: '',
-        desa: '',
-        desaId: ''
-      }
-      
-      // Use onRegionChange if available, otherwise use individual callbacks
-      if (onRegionChange) {
-        onRegionChange(regionData)
-      } else {
-        // Only call individual callbacks if onRegionChange is not available
-        if (onKabupatenChange) onKabupatenChange(selectedRegency.id, selectedRegency.name)
-        if (onKecamatanChange) onKecamatanChange('', '')
-        if (onDesaChange) onDesaChange('', '')
-      }
+        kecamatan: '',
+        desaId: '',
+        desa: ''
+      })
     }
   }
 
   const handleDistrictChange = (value: string) => {
-    console.log('District changed:', value)
-    const selectedDistrict = districts.find(d => d.id === value)
-    if (selectedDistrict) {
-      console.log('Selected district:', selectedDistrict)
-      // Reset dependent selections
-      const selectedRegency = regencies.find(r => r.id === selectedDistrict.regency_id)
-      const selectedProvince = selectedRegency ? provinces.find(p => p.id === selectedRegency.province_id) : null
-      
-      const regionData = {
-        provinsi: selectedProvince ? selectedProvince.name : '',
-        provinsiId: selectedProvince ? selectedProvince.id : '',
-        kabupaten: selectedRegency ? selectedRegency.name : '',
-        kabupatenId: selectedRegency ? selectedRegency.id : '',
-        kecamatan: selectedDistrict.name,
-        kecamatanId: selectedDistrict.id,
-        desa: '',
-        desaId: ''
-      }
-      
-      // Use onRegionChange if available, otherwise use individual callbacks
-      if (onRegionChange) {
-        onRegionChange(regionData)
-      } else {
-        // Only call individual callbacks if onRegionChange is not available
-        if (onKecamatanChange) onKecamatanChange(selectedDistrict.id, selectedDistrict.name)
-        if (onDesaChange) onDesaChange('', '')
-      }
+    const realValue = value === '_ALL_' ? '' : value;
+    const districtName = districts.find((d) => d.id === realValue)?.name || ''
+    setSelectedKecamatanId(realValue)
+    setSelectedDesaId('')
+    setVillages([])
+
+    if (onKecamatanChange) onKecamatanChange(realValue, districtName)
+    if (onRegionChange) {
+      onRegionChange({
+        provinsiId: selectedProvinsiId,
+        provinsi: provinces.find((p) => p.id === selectedProvinsiId)?.name || '',
+        kabupatenId: selectedKabupatenId,
+        kabupaten: regencies.find((r) => r.id === selectedKabupatenId)?.name || '',
+        kecamatanId: realValue,
+        kecamatan: districtName,
+        desaId: '',
+        desa: ''
+      })
     }
   }
 
   const handleVillageChange = (value: string) => {
-    console.log('Village changed:', value)
-    const selectedVillage = villages.find(v => v.id === value)
-    if (selectedVillage) {
-      console.log('Selected village:', selectedVillage)
-      
-      const selectedDistrict = districts.find(d => d.id === selectedVillage.district_id)
-      const selectedRegency = selectedDistrict ? regencies.find(r => r.id === selectedDistrict.regency_id) : null
-      const selectedProvince = selectedRegency ? provinces.find(p => p.id === selectedRegency.province_id) : null
-      
-      const regionData = {
-        provinsi: selectedProvince ? selectedProvince.name : '',
-        provinsiId: selectedProvince ? selectedProvince.id : '',
-        kabupaten: selectedRegency ? selectedRegency.name : '',
-        kabupatenId: selectedRegency ? selectedRegency.id : '',
-        kecamatan: selectedDistrict ? selectedDistrict.name : '',
-        kecamatanId: selectedDistrict ? selectedDistrict.id : '',
-        desa: selectedVillage.name,
-        desaId: selectedVillage.id
-      }
-      
-      // Use onRegionChange if available, otherwise use individual callbacks
-      if (onRegionChange) {
-        onRegionChange(regionData)
-      } else {
-        // Only call individual callbacks if onRegionChange is not available
-        if (onDesaChange) onDesaChange(selectedVillage.id, selectedVillage.name)
-      }
+    const realValue = value === '_ALL_' ? '' : value;
+    const villageName = villages.find((v) => v.id === realValue)?.name || ''
+    setSelectedDesaId(realValue)
+    
+    if (onDesaChange) onDesaChange(realValue, villageName)
+    if (onRegionChange) {
+      onRegionChange({
+        provinsiId: selectedProvinsiId,
+        provinsi: provinces.find((p) => p.id === selectedProvinsiId)?.name || '',
+        kabupatenId: selectedKabupatenId,
+        kabupaten: regencies.find((r) => r.id === selectedKabupatenId)?.name || '',
+        kecamatanId: selectedKecamatanId,
+        kecamatan: districts.find((d) => d.id === selectedKecamatanId)?.name || '',
+        desaId: realValue,
+        desa: villageName
+      })
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="provinsi">
-          Provinsi {required && <span className="text-red-500">*</span>}
-        </Label>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div>
+        <Label htmlFor="provinsi">Provinsi</Label>
         <Select
-          value={provinsiId || ""}
+          value={selectedProvinsiId}
           onValueChange={handleProvinceChange}
           disabled={disabled || loadingProvinces}
+          required={required}
         >
-          <SelectTrigger>
-            <SelectValue placeholder={loadingProvinces ? "Memuat provinsi..." : "Pilih Provinsi"} />
+          <SelectTrigger id="provinsi" disabled={disabled || loadingProvinces}>
+            <SelectValue placeholder="Pilih Provinsi" />
           </SelectTrigger>
           <SelectContent>
             {loadingProvinces ? (
-              <SelectItem value="loading" disabled>
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Memuat provinsi...
-                </div>
-              </SelectItem>
+              <div className="flex items-center justify-center p-2">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <span>Memuat...</span>
+              </div>
             ) : (
-              provinces.map((province) => (
-                <SelectItem key={province.id} value={province.id}>
-                  {province.name}
-                </SelectItem>
-              ))
+              <>
+                <SelectItem value="_ALL_">Semua Provinsi</SelectItem>
+                {provinces.map((province) => (
+                  <SelectItem key={province.id} value={province.id}>
+                    {province.name}
+                  </SelectItem>
+                ))}
+              </>
             )}
           </SelectContent>
         </Select>
       </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="kabupaten">
-          Kabupaten/Kota {required && <span className="text-red-500">*</span>}
-        </Label>
+      <div>
+        <Label htmlFor="kabupaten">Kabupaten/Kota</Label>
         <Select
-          value={kabupatenId || ""}
+          value={selectedKabupatenId}
           onValueChange={handleRegencyChange}
-          disabled={disabled || !provinsiId || loadingRegencies}
+          disabled={disabled || !selectedProvinsiId || loadingRegencies}
+          required={required}
         >
-          <SelectTrigger>
-            <SelectValue 
-              placeholder={
-                !provinsiId 
-                  ? "Pilih provinsi terlebih dahulu" 
-                  : loadingRegencies 
-                  ? "Memuat kabupaten..." 
-                  : "Pilih Kabupaten/Kota"
-              } 
-            />
+          <SelectTrigger id="kabupaten" disabled={disabled || !selectedProvinsiId || loadingRegencies}>
+            <SelectValue placeholder="Pilih Kabupaten/Kota" />
           </SelectTrigger>
           <SelectContent>
             {loadingRegencies ? (
-              <SelectItem value="loading" disabled>
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Memuat kabupaten...
-                </div>
-              </SelectItem>
+              <div className="flex items-center justify-center p-2">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <span>Memuat...</span>
+              </div>
             ) : (
-              regencies.map((regency) => (
-                <SelectItem key={regency.id} value={regency.id}>
-                  {regency.name}
-                </SelectItem>
-              ))
+              <>
+                <SelectItem value="_ALL_">Semua Kabupaten/Kota</SelectItem>
+                {regencies.map((regency) => (
+                  <SelectItem key={regency.id} value={regency.id}>
+                    {regency.name}
+                  </SelectItem>
+                ))}
+              </>
             )}
           </SelectContent>
         </Select>
       </div>
-
       {showKecamatan && (
-        <div className="space-y-2">
-          <Label htmlFor="kecamatan">
-            Kecamatan {required && <span className="text-red-500">*</span>}
-          </Label>
+        <div>
+          <Label htmlFor="kecamatan">Kecamatan</Label>
           <Select
-            value={kecamatanId || ""}
+            value={selectedKecamatanId}
             onValueChange={handleDistrictChange}
-            disabled={disabled || !kabupatenId || loadingDistricts}
+            disabled={disabled || !selectedKabupatenId || loadingDistricts}
+            required={required}
           >
-            <SelectTrigger>
-              <SelectValue 
-                placeholder={
-                  !kabupatenId 
-                    ? "Pilih kabupaten terlebih dahulu" 
-                    : loadingDistricts 
-                    ? "Memuat kecamatan..." 
-                    : "Pilih Kecamatan"
-                } 
-              />
+            <SelectTrigger id="kecamatan" disabled={disabled || !selectedKabupatenId || loadingDistricts}>
+              <SelectValue placeholder="Pilih Kecamatan" />
             </SelectTrigger>
             <SelectContent>
               {loadingDistricts ? (
-                <SelectItem value="loading" disabled>
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Memuat kecamatan...
-                  </div>
-                </SelectItem>
+                <div className="flex items-center justify-center p-2">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>Memuat...</span>
+                </div>
               ) : (
-                districts.map((district) => (
-                  <SelectItem key={district.id} value={district.id}>
-                    {district.name}
-                  </SelectItem>
-                ))
+                <>
+                  <SelectItem value="_ALL_">Semua Kecamatan</SelectItem>
+                  {districts.map((district) => (
+                    <SelectItem key={district.id} value={district.id}>
+                      {district.name}
+                    </SelectItem>
+                  ))}
+                </>
               )}
             </SelectContent>
           </Select>
         </div>
       )}
-
       {showDesa && (
-        <div className="space-y-2">
-          <Label htmlFor="desa">
-            Desa/Kelurahan {required && <span className="text-red-500">*</span>}
-          </Label>
+        <div>
+          <Label htmlFor="desa">Desa/Kelurahan</Label>
           <Select
-            value={desaId || ""}
+            value={selectedDesaId}
             onValueChange={handleVillageChange}
-            disabled={disabled || !kecamatanId || loadingVillages}
+            disabled={disabled || !selectedKecamatanId || loadingVillages}
+            required={required}
           >
-            <SelectTrigger>
-              <SelectValue 
-                placeholder={
-                  !kecamatanId 
-                    ? "Pilih kecamatan terlebih dahulu" 
-                    : loadingVillages 
-                    ? "Memuat desa/kelurahan..." 
-                    : "Pilih Desa/Kelurahan"
-                } 
-              />
+            <SelectTrigger id="desa" disabled={disabled || !selectedKecamatanId || loadingVillages}>
+              <SelectValue placeholder="Pilih Desa/Kelurahan" />
             </SelectTrigger>
             <SelectContent>
               {loadingVillages ? (
-                <SelectItem value="loading" disabled>
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Memuat desa/kelurahan...
-                  </div>
-                </SelectItem>
+                <div className="flex items-center justify-center p-2">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>Memuat...</span>
+                </div>
               ) : (
-                villages.map((village) => (
-                  <SelectItem key={village.id} value={village.id}>
-                    {village.name}
-                  </SelectItem>
-                ))
+                <>
+                  <SelectItem value="_ALL_">Semua Desa/Kelurahan</SelectItem>
+                  {villages.map((village) => (
+                    <SelectItem key={village.id} value={village.id}>
+                      {village.name}
+                    </SelectItem>
+                  ))}
+                </>
               )}
             </SelectContent>
           </Select>

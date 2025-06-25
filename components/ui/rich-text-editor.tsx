@@ -27,13 +27,14 @@ import {
   Redo,
   Link as LinkIcon,
   Image as ImageIcon,
+  Upload,
   // AlignLeft,
   // AlignCenter,
   // AlignRight,
   // AlignJustify,
   // Palette
 } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 interface RichTextEditorProps {
@@ -45,9 +46,9 @@ interface RichTextEditorProps {
 
 const MenuBar = ({ editor }: { editor: any }) => {
   const [showLinkInput, setShowLinkInput] = useState(false);
-  const [showImageInput, setShowImageInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // const [showColorPicker, setShowColorPicker] = useState(false);
 
   const addLink = useCallback(() => {
@@ -58,13 +59,47 @@ const MenuBar = ({ editor }: { editor: any }) => {
     }
   }, [editor, linkUrl]);
 
-  const addImage = useCallback(() => {
-    if (imageUrl && editor) {
-      editor.chain().focus().setImage({ src: imageUrl }).run();
-      setImageUrl('');
-      setShowImageInput(false);
+
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
     }
-  }, [editor, imageUrl]);
+
+    setIsUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch('/api/upload/temp', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        editor.chain().focus().setImage({ src: data.url }).run();
+        console.log('Image uploaded successfully:', data.filename);
+      } else {
+        throw new Error(data.error || 'Upload failed');
+      }
+      
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [editor]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileUpload(e.target.files[0]);
+    }
+  };
 
   if (!editor) {
     return null;
@@ -194,10 +229,21 @@ const MenuBar = ({ editor }: { editor: any }) => {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => setShowImageInput(!showImageInput)}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          title={isUploading ? 'Uploading...' : 'Upload gambar'}
         >
-          <ImageIcon className="h-4 w-4" />
+          <ImageIcon className={`h-4 w-4 ${isUploading ? 'animate-spin' : ''}`} />
         </Button>
+        
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
         
         <Separator orientation="vertical" className="h-6" />
         
@@ -242,26 +288,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
         </div>
       )}
 
-      {/* Image Input */}
-      {showImageInput && (
-        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-          <Label htmlFor="image-url" className="text-sm">Gambar URL:</Label>
-          <Input
-            id="image-url"
-            type="url"
-            placeholder="https://example.com/image.jpg"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            className="flex-1"
-          />
-          <Button type="button" size="sm" onClick={addImage}>
-            Tambah
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => setShowImageInput(false)}>
-            Batal
-          </Button>
-        </div>
-      )}
+
     </div>
   );
 };

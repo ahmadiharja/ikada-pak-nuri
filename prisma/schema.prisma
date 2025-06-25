@@ -23,8 +23,7 @@ model User {
   posts       Post[]
   comments    Comment[]
   blogs       Blog[]
-  events      Event[]
-  donations   Donation[]
+  donations   DonationTransaction[]
   userRoles   UserRole[]
 
   @@map("users")
@@ -38,13 +37,14 @@ model Syubiyah {
   provinsiId  String?  // ID provinsi dari API wilayah
   kabupatenId String?  // ID kabupaten dari API wilayah
   description String?
+  penanggungJawab      String?  // Nama penanggung jawab (opsional)
+  noHpPenanggungJawab  String?  // No HP penanggung jawab (opsional)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
   // Relations
   alumni      Alumni[]
   users       User[]   // Users dengan role SYUBIYAH yang mengelola syubiyah ini
-  eventParticipants EventParticipant[]
 
   @@map("syubiyah")
 }
@@ -97,6 +97,7 @@ model Alumni {
   pekerjaan         String[]       // Pekerjaan/aktivitas (array)
   phone             String?        // No HP
   email             String         @unique
+  username          String?        // Username untuk login (fallback ke phone jika kosong)
   penghasilanBulan  IncomeRange?   // Penghasilan per bulan
   
   // Alamat lengkap dengan API wilayah
@@ -131,8 +132,8 @@ model Alumni {
   // Relations
   syubiyah      Syubiyah?    @relation(fields: [syubiyahId], references: [id])
   mustahiq      Mustahiq?    @relation(fields: [mustahiqId], references: [id])
-  eventParticipants EventParticipant[]
-  products      Product[]    // Relasi ke produk UMKM
+  eventRegistrations EventRegistration[]
+  store         AlumniStore?
 
   @@map("alumni")
 }
@@ -244,135 +245,111 @@ model Blog {
   @@map("blogs")
 }
 
-model EventCategory {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  color       String   @default("blue")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  // Relations
-  events      Event[]
-
-  @@map("event_categories")
-}
-
 model Event {
-  id              String           @id @default(cuid())
+  id              String        @id @default(cuid())
   title           String
   description     String
-  excerpt         String?          // Ringkasan singkat
-  imageUrl        String?
+  type            String        // seminar, reunion, workshop, etc.
+  eventType       EventType     @default(OFFLINE) // online or offline
+  onlineLink      String?       // zoom, youtube, etc link for online events
+  date            DateTime
   location        String?
-  locationDetail  String?          // Detail alamat lengkap
-  startDate       DateTime
-  endDate         DateTime?
-  registrationStart DateTime?      // Mulai pendaftaran
-  registrationEnd   DateTime?      // Akhir pendaftaran
-  maxParticipants   Int?           // Maksimal peserta
-  currentParticipants Int @default(0) // Jumlah peserta saat ini
-  eventType       EventType        @default(SINGLE) // Jenis event: sekali atau periode
-  recurrencePattern String?        // Pola pengulangan untuk event periode (JSON)
-  status          ContentStatus    @default(PENDING)
-  visibility      PostVisibility   @default(ALL_SYUBIYAH)
-  targetSyubiyahIds String[]       // Array ID syubiyah untuk visibility SPECIFIC_SYUBIYAH
-  categoryId      String?
-  organizerId     String
-  registrationFee Decimal?         // Biaya pendaftaran
-  isOnline        Boolean          @default(false)
-  onlineLink      String?          // Link untuk event online
-  requirements    String[]         // Persyaratan peserta
-  benefits        String[]         // Manfaat mengikuti event
-  contactPerson   String?          // Narahubung
-  contactPhone    String?          // No HP narahubung
-  contactEmail    String?          // Email narahubung
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  imageUrl        String?       // banner image
+  maxParticipants Int?
+  status          EventStatus   @default(DRAFT)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   
   // Relations
-  category        EventCategory?   @relation(fields: [categoryId], references: [id])
-  organizer       User             @relation(fields: [organizerId], references: [id])
-  participants    EventParticipant[]
-  sessions        EventSession[]   // Untuk event dengan multiple session
+  formFields      EventFormField[]
+  registrations   EventRegistration[]
 
   @@map("events")
 }
 
-model EventSession {
-  id          String   @id @default(cuid())
+model EventFormField {
+  id          String            @id @default(cuid())
   eventId     String
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime
-  speaker     String?  // Pembicara/narasumber
-  location    String?  // Lokasi khusus untuk session ini
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  label       String
+  type        EventFieldType
+  required    Boolean           @default(false)
+  options     Json?             // For select, checkbox, radio options
+  order       Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
   
   // Relations
-  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event       Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  answers     EventRegistrationAnswer[]
 
-  @@map("event_sessions")
+  @@map("event_form_fields")
 }
 
-model EventParticipant {
-  id              String                @id @default(cuid())
-  eventId         String
-  participantName String
-  participantEmail String
-  participantPhone String?
-  syubiyahId      String?               // Syubiyah peserta
-  alumniId        String?               // Jika peserta adalah alumni
-  registrationDate DateTime             @default(now())
-  status          EventParticipantStatus @default(REGISTERED)
-  paymentStatus   PaymentStatus         @default(PENDING)
-  paymentAmount   Decimal?
-  paymentDate     DateTime?
-  notes           String?               // Catatan khusus
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+model EventRegistration {
+  id          String        @id @default(cuid())
+  eventId     String
+  alumniId    String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   
   // Relations
-  event           Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  syubiyah        Syubiyah?             @relation(fields: [syubiyahId], references: [id])
-  alumni          Alumni?               @relation(fields: [alumniId], references: [id])
+  event       Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  alumni      Alumni        @relation(fields: [alumniId], references: [id], onDelete: Cascade)
+  answers     EventRegistrationAnswer[]
 
-  @@unique([eventId, participantEmail])
-  @@map("event_participants")
+  @@unique([eventId, alumniId])
+  @@map("event_registrations")
+}
+
+model EventRegistrationAnswer {
+  id             String            @id @default(cuid())
+  registrationId String
+  fieldId        String
+  value          String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  
+  // Relations
+  registration   EventRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  field          EventFormField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([registrationId, fieldId])
+  @@map("event_registration_answers")
 }
 
 model DonationProgram {
-  id            String     @id @default(cuid())
-  title         String
-  description   String
-  targetAmount  Decimal?
-  currentAmount Decimal    @default(0)
-  imageUrl      String?
-  isActive      Boolean    @default(true)
-  startDate     DateTime
-  endDate       DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  donations     Donation[]
+  id             String   @id @default(uuid())
+  title          String
+  description    String
+  type           DonationType // ENUM: 'wajib', 'sukarela', 'program'
+  targetAmount   Int?     // for target-based donations
+  deadline       DateTime? // for time-based campaigns
+  startDate      DateTime
+  endDate        DateTime?
+  status         DonationStatus // ENUM: 'draft', 'aktif', 'selesai'
+  visible        Boolean  @default(true)
+  thumbnail      String?  // URL to uploaded thumbnail image
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  transactions   DonationTransaction[]
 
   @@map("donation_programs")
 }
 
-model Donation {
-  id        String           @id @default(cuid())
-  amount    Decimal
-  type      DonationType
-  message   String?
-  donorId   String
-  programId String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  donor     User             @relation(fields: [donorId], references: [id], map: "donation_donor_fkey")
-  program   DonationProgram? @relation(fields: [programId], references: [id], map: "donation_program_fkey")
+model DonationTransaction {
+  id              String   @id @default(uuid())
+  program         DonationProgram @relation(fields: [programId], references: [id])
+  programId       String
+  alumni          User     @relation(fields: [alumniId], references: [id])
+  alumniId        String
+  amount          Int
+  paymentMethod   String   // e.g., 'manual'
+  transferProof   String?  // URL to uploaded file
+  status          PaymentStatus // ENUM: 'pending', 'approved', 'rejected'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@map("donations")
+  @@map("donation_transactions")
 }
 
 
@@ -455,8 +432,26 @@ enum ContentStatus {
 }
 
 enum DonationType {
-  VOLUNTARY
-  PROGRAM
+  wajib
+  sukarela
+  program
+}
+
+enum DonationStatus {
+  draft
+  aktif
+  selesai
+}
+
+enum PaymentStatus {
+  pending
+  approved
+  rejected
+  PENDING     // Menunggu pembayaran
+  PAID        // Sudah dibayar
+  CANCELLED   // Dibatalkan
+  REFUNDED    // Dikembalikan
+  FREE        // Gratis (tidak perlu bayar)
 }
 
 enum MaritalStatus {
@@ -468,10 +463,11 @@ enum MaritalStatus {
 }
 
 enum IncomeRange {
-  RANGE_1_5
-  RANGE_5_10
-  RANGE_10_30
-  ABOVE_30
+  KURANG_1_JUTA
+  SATU_3_JUTA
+  TIGA_5_JUTA
+  LIMA_10_JUTA
+  LEBIH_10_JUTA
 }
 
 enum PostVisibility {
@@ -479,26 +475,29 @@ enum PostVisibility {
   SPECIFIC_SYUBIYAH // Ditampilkan hanya di syubiyah tertentu
 }
 
+enum EventStatus {
+  DRAFT     // Draft dengan info parsial
+  PUBLISHED // Published dan bisa diakses alumni
+}
+
 enum EventType {
-  SINGLE    // Event sekali
-  RECURRING // Event berulang/periode
+  ONLINE    // Event online (zoom, youtube, etc)
+  OFFLINE   // Event offline/tatap muka
 }
 
-enum EventParticipantStatus {
-  REGISTERED  // Terdaftar
-  CONFIRMED   // Konfirmasi kehadiran
-  ATTENDED    // Hadir
-  CANCELLED   // Dibatalkan
-  WAITLISTED  // Daftar tunggu
+enum EventFieldType {
+  TEXT      // Input text
+  TEXTAREA  // Textarea
+  SELECT    // Select dropdown
+  CHECKBOX  // Checkbox
+  RADIO     // Radio button
+  EMAIL     // Email input
+  PHONE     // Phone input
+  NUMBER    // Number input
+  DATE      // Date input
 }
 
-enum PaymentStatus {
-  PENDING     // Menunggu pembayaran
-  PAID        // Sudah dibayar
-  CANCELLED   // Dibatalkan
-  REFUNDED    // Dikembalikan
-  FREE        // Gratis (tidak perlu bayar)
-}
+
 
 model OrganizationMember {
   id          String   @id @default(cuid())
@@ -550,50 +549,65 @@ model ProductCategory {
   @@map("product_categories")
 }
 
+model AlumniStore {
+  id              String   @id @default(cuid())
+  name            String   // Nama toko/brand
+  slug            String   @unique
+  description     String?  // Deskripsi toko
+  logo            String?  // URL logo toko
+  banner          String?  // URL banner toko
+  alumniId        String   @unique // Satu alumni satu toko
+  
+  // Kontak Toko
+  whatsappNumber  String?  // Nomor WA toko
+  instagramUrl    String?  // Instagram toko
+  facebookUrl     String?  // Facebook toko
+  websiteUrl      String?  // Website toko
+  
+  // Lokasi & Operasional
+  address         String?  // Alamat lengkap toko
+  city            String?  // Kota toko
+  operatingHours  String?  // Jam operasional
+  
+  // Status
+  isActive        Boolean  @default(true)
+  isVerified      Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  alumni          Alumni   @relation(fields: [alumniId], references: [id], onDelete: Cascade)
+  products        Product[]
+  
+  @@map("alumni_stores")
+}
+
 model Product {
   id              String          @id @default(cuid())
-  name            String
+  name            String          // Nama produk
   slug            String          @unique
-  description     String
-  shortDescription String?        // Deskripsi singkat untuk card
-  price           Decimal?        // Harga tunggal
-  priceMin        Decimal?        // Harga minimum untuk range
-  priceMax        Decimal?        // Harga maksimum untuk range
-  priceText       String?         // Text harga custom ("Mulai dari 50rb", "Nego", dll)
+  description     String          // Deskripsi produk
+  price           Decimal?        // Harga satuan
+  unit            String?         // Satuan produk (kg, pcs, meter, dll)
   categoryId      String
-  alumniId        String
+  storeId         String          // Relasi ke AlumniStore
   
   // Marketplace Links
   shopeeUrl       String?         // Link Shopee
   tokopediaUrl    String?         // Link Tokopedia
   tiktokUrl       String?         // Link TikTok Shop
-  bukalapakUrl    String?         // Link Bukalapak
-  lazadaUrl       String?         // Link Lazada
-  blibliUrl       String?         // Link Blibli
-  whatsappNumber  String?         // Nomor WA untuk kontak langsung
-  instagramUrl    String?         // Instagram business
-  facebookUrl     String?         // Facebook page
-  websiteUrl      String?         // Website pribadi
   
   // Media
   images          String[]        // Array URL gambar produk
   thumbnailImage  String?         // Gambar utama/thumbnail
-  videoUrl        String?         // URL video produk (YouTube, dll)
   
   // Location & Shipping
-  location        String?         // Lokasi usaha
-  shippingInfo    String?         // Info pengiriman
+  shippedFromCity String?         // Dikirim dari kota
   
   // Status & Visibility
   isActive        Boolean         @default(true)
   isApproved      Boolean         @default(true) // Auto-approved untuk alumni verified
-  isFeatured      Boolean         @default(false)
-  isPromoted      Boolean         @default(false) // Untuk produk yang dipromosikan
-  
-  // SEO & Meta
-  metaTitle       String?
-  metaDescription String?
-  tags            String[]        // Tags untuk pencarian
   
   // Stats & Analytics
   viewCount       Int             @default(0)
@@ -603,16 +617,12 @@ model Product {
   tiktokClicks    Int             @default(0)
   whatsappClicks  Int             @default(0)
   
-  // Business Info
-  businessName    String?         // Nama usaha/brand
-  businessType    String?         // Jenis usaha
-  
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   
   // Relations
   category        ProductCategory @relation(fields: [categoryId], references: [id])
-  alumni          Alumni          @relation(fields: [alumniId], references: [id], onDelete: Cascade)
+  store           AlumniStore     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   reviews         ProductReview[]
   
   @@map("products")
@@ -635,4 +645,18 @@ model ProductReview {
   product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   
   @@map("product_reviews")
+}
+
+model GeneralConfig {
+  id            String   @id @default(cuid())
+  websiteTitle  String
+  favicon       String?
+  heroImages    Json     // Array of image objects: [{src, alt}]
+  heroAutoplay  Boolean  @default(true)
+  heroInterval  Int      @default(4000)
+  footerCopyright String
+  footerLinks   Json     // Array of {label, url}
+  footerSocial  Json     // {instagram, facebook, youtube}
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

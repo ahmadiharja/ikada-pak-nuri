@@ -47,27 +47,25 @@ export function ImageUploader({
       const formData = new FormData();
       formData.append('file', file);
       
-      // You can implement your own upload endpoint here
-      // For now, we'll use a placeholder URL or convert to base64
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        handleUrlChange(result);
-        setIsUploading(false);
-      };
-      reader.readAsDataURL(file);
+      // Upload to blog API endpoint
+      const response = await fetch('/api/upload/temp', {
+        method: 'POST',
+        body: formData,
+      });
       
-      // Alternative: Upload to your server
-      // const response = await fetch('/api/upload', {
-      //   method: 'POST',
-      //   body: formData,
-      // });
-      // const data = await response.json();
-      // handleUrlChange(data.url);
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        handleUrlChange(data.url);
+        console.log('File uploaded successfully:', data.filename);
+      } else {
+        throw new Error(data.error || 'Upload failed');
+      }
       
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed. Please try again.');
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    } finally {
       setIsUploading(false);
     }
   }, []);
@@ -110,25 +108,17 @@ export function ImageUploader({
     <div className={cn('space-y-4', className)}>
       <Label>{label}</Label>
       
-      {/* URL Input */}
+      {/* Upload Button */}
       <div className="flex gap-2">
-        <div className="flex-1">
-          <Input
-            type="url"
-            placeholder={placeholder}
-            value={imageUrl}
-            onChange={(e) => handleUrlChange(e.target.value)}
-            className="w-full"
-          />
-        </div>
         <Button
           type="button"
           variant="outline"
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
+          className="w-full"
         >
           <Upload className="h-4 w-4 mr-2" />
-          {isUploading ? 'Uploading...' : 'Upload'}
+          {isUploading ? 'Uploading...' : 'Pilih Gambar'}
         </Button>
       </div>
 

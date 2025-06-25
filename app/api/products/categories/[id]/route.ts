@@ -1,437 +1,324 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-const prisma = new PrismaClient();
-
-// GET /api/products/categories/[id] - Ambil kategori berdasarkan ID
+// GET - Get single category by ID
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const { id } = params;
-    const { searchParams } = new URL(request.url);
-    const includeChildren = searchParams.get('includeChildren') === 'true';
-    const includeParent = searchParams.get('includeParent') === 'true';
-    const includeCount = searchParams.get('includeCount') === 'true';
 
     const category = await prisma.productCategory.findUnique({
       where: { id },
       include: {
-        ...(includeParent && { parent: true }),
-        ...(includeChildren && {
-          children: {
-            include: {
-              children: {
-                include: {
-                  children: true,
-                  ...(includeCount && {
-                    _count: {
-                      select: {
-                        products: {
-                          where: {
-                            isActive: true,
-                            isApproved: true
-                          }
-                        }
-                      }
-                    }
-                  })
-                },
-                orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
-              },
-              ...(includeCount && {
-                _count: {
-                  select: {
-                    products: {
-                      where: {
-                        isActive: true,
-                        isApproved: true
-                      }
-                    }
-                  }
-                }
-              })
-            },
-            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
-          }
-        }),
-        ...(includeCount && {
-          _count: {
-            select: {
-              products: {
-                where: {
-                  isActive: true,
-                  isApproved: true
-                }
-              }
-            }
-          }
-        })
-      }
+        parent: true,
+        children: true,
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
     });
 
     if (!category) {
       return NextResponse.json(
-        { error: 'Kategori tidak ditemukan' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    const result = includeCount ? {
-      ...category,
-      productCount: category._count?.products || 0,
-      ...(category.children && {
-        children: category.children.map((child: any) => addProductCount(child))
-      })
-    } : category;
-
-    return NextResponse.json(result);
-
+    return NextResponse.json(category);
   } catch (error) {
     console.error('Error fetching category:', error);
     return NextResponse.json(
-      { error: 'Gagal mengambil data kategori' },
+      { error: 'Failed to fetch category' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
-// Helper function untuk menambahkan product count secara rekursif
-function addProductCount(category: any): any {
-  const result = {
-    ...category,
-    productCount: category._count?.products || 0
-  };
-  
-  if (category.children && category.children.length > 0) {
-    result.children = category.children.map((child: any) => addProductCount(child));
-  }
-  
-  return result;
-}
-
-// PUT /api/products/categories/[id] - Update kategori
+// PUT - Update category
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.email) {
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: {
-        roles: {
-          include: {
-            role: true
-          }
-        }
-      }
-    });
-
-    const isAdmin = user?.roles.some(ur => ur.role.name === 'ADMIN');
-    if (!isAdmin) {
-      return NextResponse.json(
-        { error: 'Akses ditolak. Hanya admin yang dapat mengupdate kategori.' },
-        { status: 403 }
-      );
-    }
-
     const { id } = params;
     const body = await request.json();
-    const { name, description, icon, color, sortOrder, parentId, isActive } = body;
+    const { name, description, icon, color, sortOrder, isActive, parentId } = body;
 
-    // Cek apakah kategori ada
+    // Check if category exists
     const existingCategory = await prisma.productCategory.findUnique({
       where: { id },
-      include: { parent: true, children: true }
+      include: {
+        children: true,
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
     });
 
     if (!existingCategory) {
       return NextResponse.json(
-        { error: 'Kategori tidak ditemukan' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    // Validasi parent category jika diubah
-    let level = existingCategory.level;
-    let parentPath = '';
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return NextResponse.json(
+        { error: 'Category name is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if parent exists and get its level
+    let parentLevel = -1;
+    if (parentId) {
+      const parent = await prisma.productCategory.findUnique({
+        where: { id: parentId },
+        select: { level: true, path: true }
+      });
+      
+      if (!parent) {
+        return NextResponse.json(
+          { error: 'Parent category not found' },
+          { status: 400 }
+        );
+      }
+      
+      parentLevel = parent.level;
+      
+      // Check if adding this category would exceed max level (3 levels: 0, 1, 2)
+      if (parentLevel >= 2) {
+        return NextResponse.json(
+          { error: 'Cannot create category beyond level 2 (maximum 3 levels allowed)' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Check for duplicate name within same parent (excluding current category)
+    const duplicateCategory = await prisma.productCategory.findFirst({
+      where: {
+        name: name.trim(),
+        parentId: parentId || null,
+        id: { not: id },
+      },
+    });
+
+    if (duplicateCategory) {
+      return NextResponse.json(
+        { error: 'Category with this name already exists in the same parent' },
+        { status: 400 }
+      );
+    }
+
+    // Check if trying to move category to its own descendant
+    if (parentId) {
+      const isDescendant = await checkIfDescendant(id, parentId);
+      if (isDescendant) {
+        return NextResponse.json(
+          { error: 'Cannot move category to its own descendant' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Generate slug
+    const slug = generateSlug(name);
     
-    if (parentId !== undefined && parentId !== existingCategory.parentId) {
-      if (parentId) {
-        // Cek parent category
-        const parentCategory = await prisma.productCategory.findUnique({
-          where: { id: parentId }
-        });
-        
-        if (!parentCategory) {
-          return NextResponse.json(
-            { error: 'Kategori parent tidak ditemukan' },
-            { status: 400 }
-          );
-        }
-        
-        // Cek apakah tidak membuat circular reference
-        if (parentId === id) {
-          return NextResponse.json(
-            { error: 'Kategori tidak dapat menjadi parent dari dirinya sendiri' },
-            { status: 400 }
-          );
-        }
-        
-        // Cek apakah parent bukan child dari kategori ini
-        const isChildOfThis = await isDescendant(parentId, id);
-        if (isChildOfThis) {
-          return NextResponse.json(
-            { error: 'Kategori parent tidak dapat menjadi child dari kategori ini' },
-            { status: 400 }
-          );
-        }
-        
-        level = parentCategory.level + 1;
-        parentPath = parentCategory.path || '';
-        
-        // Batasi maksimal 3 level
-        if (level > 2) {
-          return NextResponse.json(
-            { error: 'Maksimal 3 level kategori yang diizinkan' },
-            { status: 400 }
-          );
-        }
-      } else {
-        level = 0;
-        parentPath = '';
-      }
-    } else if (existingCategory.parent) {
-      parentPath = existingCategory.parent.path || '';
-    }
-
-    // Validasi nama unik dalam parent yang sama
-    if (name && name !== existingCategory.name) {
-      const duplicateName = await prisma.productCategory.findFirst({
-        where: {
-          name,
-          parentId: parentId !== undefined ? (parentId || null) : existingCategory.parentId,
-          id: { not: id }
-        }
+    // Calculate level
+    const level = parentLevel + 1;
+    
+    // Generate path
+    let path = slug;
+    if (parentId) {
+      const parent = await prisma.productCategory.findUnique({
+        where: { id: parentId },
+        select: { path: true }
       });
-
-      if (duplicateName) {
-        return NextResponse.json(
-          { error: 'Kategori dengan nama tersebut sudah ada dalam kategori parent yang sama' },
-          { status: 400 }
-        );
-      }
+      path = parent ? `${parent.path}/${slug}` : slug;
     }
 
-    // Generate slug baru jika nama berubah
-    let slug = existingCategory.slug;
-    if (name && name !== existingCategory.name) {
-      slug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim();
-
-      // Check if slug already exists
-      const existingSlug = await prisma.productCategory.findFirst({
-        where: {
-          slug,
-          id: { not: id }
-        }
-      });
-
-      if (existingSlug) {
-        return NextResponse.json(
-          { error: 'Slug kategori sudah digunakan' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Generate path baru
-    const path = parentPath ? `${parentPath}/${slug}` : slug;
-
-    // Update kategori
+    // Update category
     const updatedCategory = await prisma.productCategory.update({
       where: { id },
       data: {
-        ...(name && { name }),
-        ...(slug !== existingCategory.slug && { slug }),
-        ...(description !== undefined && { description: description || null }),
-        ...(icon !== undefined && { icon: icon || null }),
-        ...(color && { color }),
-        ...(sortOrder !== undefined && { sortOrder }),
-        ...(parentId !== undefined && { parentId: parentId || null }),
-        ...(isActive !== undefined && { isActive }),
+        name: name.trim(),
+        slug,
+        description: description?.trim() || null,
+        icon: icon?.trim() || null,
+        color: color || '#3B82F6',
+        sortOrder: sortOrder || 0,
+        isActive: isActive !== undefined ? isActive : true,
         level,
-        path
+        path,
+        parentId: parentId || null,
       },
       include: {
         parent: true,
-        children: true
-      }
+        children: true,
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
     });
 
-    // Update path untuk semua children jika path berubah
-    if (path !== existingCategory.path) {
-      await updateChildrenPaths(id, path);
+    // Update paths for all descendants if parent changed
+    if (existingCategory.parentId !== (parentId || null)) {
+      await updateDescendantPaths(id, path);
     }
 
-    return NextResponse.json({
-      message: 'Kategori berhasil diupdate',
-      category: updatedCategory
-    });
-
+    return NextResponse.json(updatedCategory);
   } catch (error) {
     console.error('Error updating category:', error);
     return NextResponse.json(
-      { error: 'Gagal mengupdate kategori' },
+      { error: 'Failed to update category' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
-// DELETE /api/products/categories/[id] - Hapus kategori
+// DELETE - Delete category
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.email) {
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: {
-        roles: {
-          include: {
-            role: true
-          }
-        }
-      }
-    });
-
-    const isAdmin = user?.roles.some(ur => ur.role.name === 'ADMIN');
-    if (!isAdmin) {
-      return NextResponse.json(
-        { error: 'Akses ditolak. Hanya admin yang dapat menghapus kategori.' },
-        { status: 403 }
-      );
-    }
-
     const { id } = params;
 
-    // Cek apakah kategori ada
+    // Check if category exists
     const category = await prisma.productCategory.findUnique({
       where: { id },
       include: {
         children: true,
-        products: true
-      }
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
     });
 
     if (!category) {
       return NextResponse.json(
-        { error: 'Kategori tidak ditemukan' },
+        { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    // Cek apakah ada produk yang menggunakan kategori ini
-    if (category.products.length > 0) {
+    // Check if category has children
+    if (category.children && category.children.length > 0) {
       return NextResponse.json(
-        { error: `Tidak dapat menghapus kategori karena masih ada ${category.products.length} produk yang menggunakan kategori ini` },
+        { error: 'Cannot delete category with sub-categories. Please delete sub-categories first.' },
         { status: 400 }
       );
     }
 
-    // Cek apakah ada sub-kategori
-    if (category.children.length > 0) {
+    // Check if category has products
+    if (category._count.products > 0) {
       return NextResponse.json(
-        { error: `Tidak dapat menghapus kategori karena masih ada ${category.children.length} sub-kategori` },
+        { error: 'Cannot delete category with products. Please remove or reassign products first.' },
         { status: 400 }
       );
     }
 
-    // Hapus kategori
+    // Delete category
     await prisma.productCategory.delete({
-      where: { id }
+      where: { id },
     });
 
-    return NextResponse.json({
-      message: 'Kategori berhasil dihapus'
-    });
-
+    return NextResponse.json(
+      { message: 'Category deleted successfully' },
+      { status: 200 }
+    );
   } catch (error) {
     console.error('Error deleting category:', error);
     return NextResponse.json(
-      { error: 'Gagal menghapus kategori' },
+      { error: 'Failed to delete category' },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
-// Helper function untuk cek apakah suatu kategori adalah descendant dari kategori lain
-async function isDescendant(categoryId: string, ancestorId: string): Promise<boolean> {
-  const category = await prisma.productCategory.findUnique({
-    where: { id: categoryId },
+// Helper function to check if a category is a descendant of another
+async function checkIfDescendant(categoryId: string, potentialParentId: string): Promise<boolean> {
+  const parent = await prisma.productCategory.findUnique({
+    where: { id: potentialParentId },
     select: { parentId: true }
   });
 
-  if (!category || !category.parentId) {
+  if (!parent) {
     return false;
   }
 
-  if (category.parentId === ancestorId) {
+  if (parent.parentId === categoryId) {
     return true;
   }
 
-  return isDescendant(category.parentId, ancestorId);
+  if (parent.parentId) {
+    return checkIfDescendant(categoryId, parent.parentId);
+  }
+
+  return false;
 }
 
-// Helper function untuk update path semua children
-async function updateChildrenPaths(parentId: string, parentPath: string) {
-  const children = await prisma.productCategory.findMany({
-    where: { parentId },
-    select: { id: true, slug: true }
+// Helper function to update paths for all descendants
+async function updateDescendantPaths(categoryId: string, newParentPath: string) {
+  const descendants = await prisma.productCategory.findMany({
+    where: {
+      path: {
+        startsWith: `${newParentPath}/`,
+      },
+    },
   });
 
-  for (const child of children) {
-    const newPath = `${parentPath}/${child.slug}`;
-    
-    await prisma.productCategory.update({
-      where: { id: child.id },
-      data: { path: newPath }
-    });
+  for (const descendant of descendants) {
+    const oldPath = descendant.path;
+    if (oldPath) {
+      const slug = oldPath.split('/').pop()!;
+      const newPath = `${newParentPath}/${slug}`;
 
-    // Recursively update grandchildren
-    await updateChildrenPaths(child.id, newPath);
+      await prisma.productCategory.update({
+        where: { id: descendant.id },
+        data: { path: newPath },
+      });
+    }
   }
+}
+
+// Helper function to generate slug
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
 }

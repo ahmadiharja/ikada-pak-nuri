@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { RegionSelector } from "@/components/ui/region-selector"
-import { Plus, Edit, Trash2, Search, Building2, MapPin } from "lucide-react"
+import { Plus, Edit, Trash2, Search, Building2, MapPin, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
 interface Syubiyah {
@@ -22,6 +22,8 @@ interface Syubiyah {
   kabupaten: string
   provinsiId?: string
   kabupatenId?: string
+  penanggungJawab?: string
+  noHpPenanggungJawab?: string
   createdAt: string
   updatedAt: string
   _count?: {
@@ -36,6 +38,8 @@ interface SyubiyahFormData {
   kabupaten: string
   provinsiId: string
   kabupatenId: string
+  penanggungJawab: string
+  noHpPenanggungJawab: string
 }
 
 const initialFormData: SyubiyahFormData = {
@@ -44,8 +48,12 @@ const initialFormData: SyubiyahFormData = {
   provinsi: "",
   kabupaten: "",
   provinsiId: "",
-  kabupatenId: ""
+  kabupatenId: "",
+  penanggungJawab: "",
+  noHpPenanggungJawab: ""
 }
+
+const ITEMS_PER_PAGE = 10
 
 export default function SyubiyahPage() {
   const [syubiyahs, setSyubiyahs] = useState<Syubiyah[]>([])
@@ -55,6 +63,7 @@ export default function SyubiyahPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<SyubiyahFormData>(initialFormData)
   const [submitting, setSubmitting] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   // Fetch syubiyahs
   const fetchSyubiyahs = async () => {
@@ -91,8 +100,21 @@ export default function SyubiyahPage() {
     syubiyah.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     syubiyah.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     syubiyah.provinsi.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    syubiyah.kabupaten.toLowerCase().includes(searchTerm.toLowerCase())
+    syubiyah.kabupaten.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    syubiyah.penanggungJawab?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    syubiyah.noHpPenanggungJawab?.toLowerCase().includes(searchTerm.toLowerCase())
   ) : []
+
+  // Pagination
+  const totalPages = Math.ceil(filteredSyubiyahs.length / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const currentSyubiyahs = filteredSyubiyahs.slice(startIndex, endIndex)
+
+  // Reset to first page when search term changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm])
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,7 +170,9 @@ export default function SyubiyahPage() {
       provinsi: syubiyah.provinsi,
       kabupaten: syubiyah.kabupaten,
       provinsiId: syubiyah.provinsiId || "",
-      kabupatenId: syubiyah.kabupatenId || ""
+      kabupatenId: syubiyah.kabupatenId || "",
+      penanggungJawab: syubiyah.penanggungJawab || "",
+      noHpPenanggungJawab: syubiyah.noHpPenanggungJawab || ""
     })
     setIsDialogOpen(true)
   }
@@ -249,6 +273,10 @@ export default function SyubiyahPage() {
                     <RegionSelector
                       provinsiId={formData.provinsiId}
                       kabupatenId={formData.kabupatenId}
+                      initialData={editingId ? {
+                        provinsiId: formData.provinsiId,
+                        kabupatenId: formData.kabupatenId
+                      } : undefined}
                       onProvinsiChange={(provinsiId, provinsiName) => {
                         setFormData({
                           ...formData,
@@ -268,6 +296,30 @@ export default function SyubiyahPage() {
                       required
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="penanggungJawab" className="text-right">
+                    Nama Penanggung Jawab
+                  </Label>
+                  <Input
+                    id="penanggungJawab"
+                    value={formData.penanggungJawab}
+                    onChange={(e) => setFormData({ ...formData, penanggungJawab: e.target.value })}
+                    className="col-span-3"
+                    placeholder="Opsional"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="noHpPenanggungJawab" className="text-right">
+                    No. HP Penanggung Jawab
+                  </Label>
+                  <Input
+                    id="noHpPenanggungJawab"
+                    value={formData.noHpPenanggungJawab}
+                    onChange={(e) => setFormData({ ...formData, noHpPenanggungJawab: e.target.value })}
+                    className="col-span-3"
+                    placeholder="Opsional"
+                  />
                 </div>
               </div>
               <DialogFooter>
@@ -295,10 +347,10 @@ export default function SyubiyahPage() {
           <div className="flex items-center space-x-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Cari syubiyah..."
+              placeholder="Cari berdasarkan nama syubiyah, penanggung jawab, provinsi, atau kota/kabupaten..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-sm"
+              className="max-w-md"
             />
           </div>
         </CardHeader>
@@ -308,92 +360,146 @@ export default function SyubiyahPage() {
               <div className="text-muted-foreground">Memuat data...</div>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nama Syubiyah</TableHead>
-                  <TableHead>Lokasi</TableHead>
-                  <TableHead>Alumni</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredSyubiyahs.length === 0 ? (
+            <>
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                      {searchTerm ? "Tidak ada syubiyah yang ditemukan" : "Belum ada data syubiyah"}
-                    </TableCell>
+                    <TableHead className="w-16">No</TableHead>
+                    <TableHead>Nama Syubiyah</TableHead>
+                    <TableHead>Provinsi</TableHead>
+                    <TableHead>Daerah</TableHead>
+                    <TableHead>Penanggung Jawab</TableHead>
+                    <TableHead>No HP</TableHead>
+                    <TableHead>Alumni</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
-                ) : (
-                  filteredSyubiyahs.map((syubiyah) => (
-                    <TableRow key={syubiyah.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{syubiyah.name}</div>
-                          {syubiyah.description && (
-                            <div className="text-sm text-muted-foreground">
-                              {syubiyah.description.length > 50
-                                ? `${syubiyah.description.substring(0, 50)}...`
-                                : syubiyah.description}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <div className="font-medium">{syubiyah.kabupaten}</div>
-                            <div className="text-sm text-muted-foreground">{syubiyah.provinsi}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {syubiyah._count?.alumni || 0} alumni
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(syubiyah)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Hapus Syubiyah</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Apakah Anda yakin ingin menghapus syubiyah "{syubiyah.name}"?
-                                  Tindakan ini tidak dapat dibatalkan.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Batal</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDelete(syubiyah.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Hapus
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {currentSyubiyahs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        {searchTerm ? "Tidak ada syubiyah yang ditemukan" : "Belum ada data syubiyah"}
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    currentSyubiyahs.map((syubiyah, index) => (
+                      <TableRow key={syubiyah.id}>
+                        <TableCell className="font-medium">
+                          {startIndex + index + 1}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{syubiyah.name}</div>
+                            {syubiyah.description && (
+                              <div className="text-sm text-muted-foreground">
+                                {syubiyah.description.length > 30
+                                  ? `${syubiyah.description.substring(0, 30)}...`
+                                  : syubiyah.description}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{syubiyah.provinsi}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{syubiyah.kabupaten}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{syubiyah.penanggungJawab || '-'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{syubiyah.noHpPenanggungJawab || '-'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {syubiyah._count?.alumni || 0} alumni
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(syubiyah)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Hapus Syubiyah</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Apakah Anda yakin ingin menghapus syubiyah "{syubiyah.name}"?
+                                    Tindakan ini tidak dapat dibatalkan.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Batal</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(syubiyah.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Hapus
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Menampilkan {startIndex + 1} - {Math.min(endIndex, filteredSyubiyahs.length)} dari {filteredSyubiyahs.length} data
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Sebelumnya
+                    </Button>
+                    <div className="flex items-center space-x-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <Button
+                          key={page}
+                          variant={currentPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(page)}
+                          className="w-8 h-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      ))}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      Selanjutnya
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -6,7 +6,7 @@ import { Menu, GraduationCap } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -113,7 +113,7 @@ export function Header() {
         <div className="flex items-center space-x-4">
           <ThemeToggle />
           <Button asChild className="hidden md:inline-flex ikada-gradient hover:opacity-90">
-            <Link href="/dashboard">Dashboard</Link>
+            <Link href="/alumni/dashboard">Dashboard</Link>
           </Button>
 
           {/* Mobile Navigation */}
@@ -125,6 +125,7 @@ export function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+              <SheetTitle id="mobile-menu-title">Menu</SheetTitle>
               <div className="flex flex-col space-y-4 mt-8">
                 {navigation.map((item) => (
                   <div key={item.name}>
@@ -156,7 +157,7 @@ export function Header() {
                   </div>
                 ))}
                 <Button asChild className="ikada-gradient hover:opacity-90 mt-4">
-                  <Link href="/dashboard">Dashboard</Link>
+                  <Link href="/alumni/dashboard">Dashboard</Link>
                 </Button>
               </div>
             </SheetContent>
