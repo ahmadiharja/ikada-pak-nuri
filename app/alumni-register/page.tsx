@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { PublicNavbar } from '@/components/public-navbar'
-import { PublicFooter } from '@/components/public-footer'
+import PublicFooter from '@/components/public-footer'
 import { RegionSelector } from '@/components/ui/region-selector'
 import { useRouter } from "next/navigation";
 
@@ -420,7 +420,6 @@ export default function AlumniRegisterPage() {
         </div>
       </div>
       </div>
-      <PublicFooter />
       {/* Dialog sukses registrasi */}
       {showSuccessDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
