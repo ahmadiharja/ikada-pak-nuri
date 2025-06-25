@@ -3,12 +3,6 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import dynamic from "next/dynamic";
-
-const ReactBricksEditor = dynamic(
-  () => import("@/components/ReactBricksEditor"),
-  { ssr: false }
-);
 
 export default function Reuni2026AdminPage() {
   const { data: session, status } = useSession();
@@ -28,7 +22,7 @@ export default function Reuni2026AdminPage() {
   return (
     <div className="max-w-5xl mx-auto py-8">
       <h1 className="text-2xl font-bold mb-6">Editor Halaman Reuni 2026</h1>
-      <ReactBricksEditor pageType="reuni2026" />
+      <p>React Bricks has been removed. This page content needs to be re-implemented.</p>
     </div>
   );
 }
